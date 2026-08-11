@@ -1,345 +1,237 @@
-
-import { useMemo } from "react";
-import { trpc } from "@/providers/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Link } from "react-router";
 import {
-  Users,
-  DollarSign,
-  AlertTriangle,
-  TrendingUp,
-  ArrowUpRight,
-  ArrowDownRight,
-  Send,
-} from "lucide-react";
-import {
-  LineChart,
-  Line,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CalendarClock,
+  Hourglass,
+  TrendingUp,
+  Users,
+  Wallet,
+} from "lucide-react";
+import { trpc } from "@/providers/trpc";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MoneyStat, PageHeader, PaymentStatusBadge, StatCard } from "@/components/ui-kit";
+import { formatDate, formatMoney } from "@/lib/format";
+import { MONTH_NAMES } from "@contracts/constants";
 
-const COLORS = ["#1a237e", "#283593", "#3949ab", "#ffc107", "#ff9800", "#ff5722"];
+const CATEGORY_COLORS = [
+  "#1a237e",
+  "#ffc107",
+  "#00897b",
+  "#e53935",
+  "#8e24aa",
+  "#43a047",
+  "#fb8c00",
+  "#3949ab",
+];
 
-function formatMoney(amount: number) {
-  return `$ ${amount.toLocaleString("es-AR")}`;
-}
-
-function KPICard({
-  title,
-  value,
-  subtitle,
-  icon: Icon,
-  iconBg,
-  trend,
-  trendUp,
-}: {
-  title: string;
-  value: string;
-  subtitle: string;
-  icon: React.ElementType;
-  iconBg: string;
-  trend?: string;
-  trendUp?: boolean;
-}) {
-  return (
-    <Card className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between">
-          <div className={`p-2 rounded-lg ${iconBg}`}>
-            <Icon className="w-5 h-5 text-white" />
-          </div>
-          {trend && (
-            <Badge
-              variant="outline"
-              className={`text-xs ${
-                trendUp ? "text-green-600 border-green-200 bg-green-50" : "text-red-600 border-red-200 bg-red-50"
-              }`}
-            >
-              {trendUp ? <ArrowUpRight className="w-3 h-3 mr-0.5" /> : <ArrowDownRight className="w-3 h-3 mr-0.5" />}
-              {trend}
-            </Badge>
-          )}
-        </div>
-        <div className="mt-3">
-          <p className="text-2xl font-bold text-[#1a1a2e] font-mono">{value}</p>
-          <p className="text-sm text-gray-500 mt-0.5">{title}</p>
-          <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
+/**
+ * Tablero principal.
+ *
+ * Cambios respecto de la versión anterior:
+ *  - "Deudores" ahora muestra un número real: antes contaba cuotas vencidas del
+ *    mes en curso, y como nada las marcaba como vencidas, siempre daba 0.
+ *  - Se agregó el aviso de pagos del portal esperando confirmación, que es la
+ *    tarea más urgente del día para la secretaría.
+ *  - La deuda es la acumulada de todos los períodos, no la del mes.
+ */
 export default function Dashboard() {
-  const { data: summary } = trpc.dashboard.getSummary.useQuery();
+  const { data: summary, isLoading } = trpc.dashboard.getSummary.useQuery();
   const { data: trend } = trpc.dashboard.getCollectionTrend.useQuery();
-  const { data: categories } = trpc.dashboard.getCategoryDistribution.useQuery();
+  const { data: distribution } = trpc.dashboard.getCategoryDistribution.useQuery();
   const { data: recentPayments } = trpc.dashboard.getRecentPayments.useQuery();
-  const { data: upcomingDues } = trpc.dashboard.getUpcomingDues.useQuery();
+  const { data: upcoming } = trpc.dashboard.getUpcomingDues.useQuery();
 
-  // Año dinámico
-  const currentYear = new Date().getFullYear();
-
-  // Generar nombres de meses dinámicamente para el año actual
-  const monthNames: Record<string, string> = useMemo(() => {
-    const months: Record<string, string> = {};
-    const monthLabels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-    monthLabels.forEach((label, index) => {
-      const monthNum = String(index + 1).padStart(2, "0");
-      months[`${currentYear}-${monthNum}`] = label;
-    });
-    return months;
-  }, [currentYear]);
-
-  const trendData = useMemo(() => {
-    if (!trend) return [];
-    return trend.map((t) => ({
-      ...t,
-      label: monthNames[t.month] ?? t.month,
-    }));
-  }, [trend, monthNames]);
-
-  const pieData = useMemo(() => {
-    if (!categories) return [];
-    return categories.map((c) => ({
-      name: c.category,
-      value: c.count,
-    }));
-  }, [categories]);
-
-  // Calcular porcentaje de cobranza real
-  const collectionPercentage = useMemo(() => {
-    if (!summary || summary.totalCollected === 0) return 0;
-    // Estimación: objetivo = totalPlayers * cuota promedio (ej: $15.000)
-    const estimatedGoal = (summary.totalPlayers || 0) * 15000;
-    if (estimatedGoal === 0) return 0;
-    return Math.round((summary.totalCollected / estimatedGoal) * 100);
-  }, [summary]);
+  const trendData = (trend ?? []).map((row) => ({
+    mes: MONTH_NAMES[Number(row.month.slice(5)) - 1]?.slice(0, 3) ?? row.month,
+    Esperado: row.expected,
+    Cobrado: row.collected,
+  }));
 
   return (
-    <div className="space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <KPICard
-          title="Socios Activos"
-          value={String(summary?.totalPlayers ?? 0)}
-          subtitle="Jugadores registrados"
-          icon={Users}
-          iconBg="bg-blue-600"
-          trend={`+${summary?.totalPlayers ?? 0}`}
-          trendUp
+    <div className="space-y-4">
+      <PageHeader title="Panel general" subtitle="Cómo viene el mes del club" />
+
+      {(summary?.pendingReviewCount ?? 0) > 0 && (
+        <Link
+          to="/pagos-pendientes"
+          className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-4 transition-colors hover:bg-amber-100"
+        >
+          <div className="flex items-center gap-3">
+            <Hourglass className="h-5 w-5 text-amber-600" />
+            <div>
+              <p className="font-semibold text-amber-900">
+                {summary?.pendingReviewCount} pago(s) esperando confirmación
+              </p>
+              <p className="text-sm text-amber-800">
+                Socios informaron transferencias desde el portal. Revisalas para que las cuotas
+                queden saldadas.
+              </p>
+            </div>
+          </div>
+          <ArrowRight className="h-5 w-5 text-amber-600" />
+        </Link>
+      )}
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard
+          label="Socios activos"
+          value={isLoading ? "…" : (summary?.totalPlayers ?? 0)}
+          icon={<Users className="h-5 w-5" />}
         />
-        <KPICard
-          title="Cobrado Este Mes"
-          value={formatMoney(summary?.totalCollected ?? 0)}
-          subtitle={`${collectionPercentage}% del objetivo estimado`}
-          icon={DollarSign}
-          iconBg="bg-[#ffc107]"
-          trend={`${collectionPercentage}%`}
-          trendUp={collectionPercentage >= 50}
+        <MoneyStat
+          label="Cobrado este mes"
+          amount={summary?.totalCollected ?? 0}
+          tone="positive"
+          icon={<TrendingUp className="h-5 w-5" />}
         />
-        <KPICard
-          title="Deudores"
-          value={String(summary?.totalDebtors ?? 0)}
-          subtitle="Cuotas vencidas"
-          icon={AlertTriangle}
-          iconBg="bg-red-500"
-          trend={`${summary?.totalDebtors ?? 0}`}
-          trendUp={false}
+        <MoneyStat
+          label="Deuda acumulada"
+          amount={summary?.totalDebt ?? 0}
+          tone="danger"
+          icon={<AlertTriangle className="h-5 w-5" />}
+          hint={`${summary?.totalDebtors ?? 0} socio(s) con cuotas vencidas`}
         />
-        <KPICard
-          title="Balance Mensual"
-          value={formatMoney(summary?.monthlyBalance ?? 0)}
-          subtitle={`Ingresos: ${formatMoney(summary?.monthlyIncome ?? 0)}`}
-          icon={TrendingUp}
-          iconBg="bg-green-500"
-          trend={`${formatMoney(summary?.monthlyBalance ?? 0)}`}
-          trendUp={(summary?.monthlyBalance ?? 0) >= 0}
+        <MoneyStat
+          label="Balance del mes"
+          amount={summary?.monthlyBalance ?? 0}
+          tone={(summary?.monthlyBalance ?? 0) >= 0 ? "positive" : "danger"}
+          icon={<Wallet className="h-5 w-5" />}
+          hint={`Egresos: ${formatMoney(summary?.monthlyExpense ?? 0)}`}
         />
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Collection Trend */}
-        <Card className="border border-gray-200 shadow-sm">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="border border-gray-200 lg:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">Evolucion de Cuotas - {currentYear}</CardTitle>
+            <CardTitle className="text-base">Cobranza del año</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip
-                    formatter={(value: number) => formatMoney(value)}
-                    contentStyle={{ borderRadius: 8, fontSize: 13 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="expected"
-                    name="Esperado"
-                    stroke="#1a237e"
-                    strokeDasharray="5 5"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="collected"
-                    name="Cobrado"
-                    stroke="#ffc107"
-                    strokeWidth={2}
-                    dot={{ r: 4 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="mes" fontSize={12} />
+                <YAxis fontSize={12} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <Tooltip formatter={(value: number) => formatMoney(value)} />
+                <Legend />
+                <Bar dataKey="Esperado" fill="#c5cae9" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Cobrado" fill="#1a237e" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        {/* Category Distribution */}
-        <Card className="border border-gray-200 shadow-sm">
+        <Card className="border border-gray-200">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">Socios por Categoria</CardTitle>
+            <CardTitle className="text-base">Socios por categoría</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
+            {(distribution ?? []).length === 0 ? (
+              <p className="py-12 text-center text-sm text-gray-400">Sin datos todavía</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
                 <PieChart>
                   <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={3}
-                    dataKey="value"
+                    data={distribution}
+                    dataKey="count"
+                    nameKey="category"
+                    innerRadius={50}
+                    outerRadius={90}
+                    paddingAngle={2}
                   >
-                    {pieData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    {(distribution ?? []).map((_, index) => (
+                      <Cell key={index} fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ borderRadius: 8, fontSize: 13 }} />
+                  <Tooltip />
+                  <Legend />
                 </PieChart>
               </ResponsiveContainer>
-            </div>
-            <div className="flex flex-wrap gap-3 justify-center mt-2">
-              {pieData.map((entry, index) => (
-                <div key={entry.name} className="flex items-center gap-1.5">
-                  <div
-                    className="w-2.5 h-2.5 rounded-full"
-                    style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                  />
-                  <span className="text-xs text-gray-600">
-                    Cat. {entry.name} ({entry.value})
-                  </span>
-                </div>
-              ))}
-            </div>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Tables Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Payments */}
-        <Card className="border border-gray-200 shadow-sm">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-base font-semibold">Ultimos Pagos Recibidos</CardTitle>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="border border-gray-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Últimos pagos</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left py-2 px-2 font-medium text-gray-500">Socio</th>
-                    <th className="text-right py-2 px-2 font-medium text-gray-500">Monto</th>
-                    <th className="text-left py-2 px-2 font-medium text-gray-500">Fecha</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentPayments?.slice(0, 6).map((p) => (
-                    <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="py-2.5 px-2 font-medium">{p.guardianName ?? "N/A"}</td>
-                      <td className="py-2.5 px-2 text-right font-mono text-green-600">
-                        {formatMoney(p.totalAmount)}
-                      </td>
-                      <td className="py-2.5 px-2 text-gray-500">
-                        {p.paymentDate ? new Date(p.paymentDate + "T12:00:00").toLocaleDateString("es-AR") : "-"}
-                      </td>
-                    </tr>
-                  ))}
-                  {(!recentPayments || recentPayments.length === 0) && (
-                    <tr>
-                      <td colSpan={3} className="py-6 text-center text-gray-400">
-                        No hay pagos recientes
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+          <CardContent className="space-y-2">
+            {(recentPayments ?? []).length === 0 && (
+              <p className="py-6 text-center text-sm text-gray-400">Todavía no hay pagos.</p>
+            )}
+            {(recentPayments ?? []).map((payment) => (
+              <div
+                key={payment.id}
+                className="flex items-center justify-between border-b border-gray-50 pb-2 text-sm last:border-0"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{payment.payerName}</p>
+                  <p className="text-xs text-gray-400">
+                    {formatDate(payment.paymentDate)}
+                    {payment.source === "portal" && " · desde el portal"}
+                  </p>
+                </div>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <PaymentStatusBadge status={payment.status} />
+                  <span className="font-mono font-semibold text-green-600">
+                    {formatMoney(payment.totalAmount)}
+                  </span>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
 
-        {/* Upcoming Dues */}
-        <Card className="border border-gray-200 shadow-sm">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-base font-semibold">Cuotas por Vencer (7 dias)</CardTitle>
+        <Card className="border border-gray-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarClock className="h-4 w-4" /> Vencen esta semana
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left py-2 px-2 font-medium text-gray-500">Jugador</th>
-                    <th className="text-right py-2 px-2 font-medium text-gray-500">Monto</th>
-                    <th className="text-left py-2 px-2 font-medium text-gray-500">Vence</th>
-                    <th className="text-center py-2 px-2 font-medium text-gray-500"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {upcomingDues?.map((q) => (
-                    <tr key={q.id} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="py-2.5 px-2 font-medium">{q.playerName ?? "N/A"}</td>
-                      <td className="py-2.5 px-2 text-right font-mono">{formatMoney(q.totalAmount)}</td>
-                      <td className="py-2.5 px-2 text-gray-500">
-                        {q.dueDate ? new Date(q.dueDate + "T12:00:00").toLocaleDateString("es-AR") : "-"}
-                      </td>
-                      <td className="py-2.5 px-2 text-center">
-                        {q.guardianPhone && (
-                          <a
-                            href={`https://wa.me/${q.guardianPhone.replace(/\D/g, "")}?text=Hola!+Te+recordamos+que+tu+cuota+vence+pronto.`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-600 rounded text-xs hover:bg-green-100 transition-colors"
-                          >
-                            <Send className="w-3 h-3" />
-                            WhatsApp
-                          </a>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {(!upcomingDues || upcomingDues.length === 0) && (
-                    <tr>
-                      <td colSpan={4} className="py-6 text-center text-gray-400">
-                        No hay cuotas por vencer
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+          <CardContent className="space-y-2">
+            {(upcoming ?? []).length === 0 && (
+              <p className="py-6 text-center text-sm text-gray-400">
+                No hay cuotas por vencer en los próximos 7 días.
+              </p>
+            )}
+            {(upcoming ?? []).map((quota) => (
+              <div
+                key={quota.id}
+                className="flex items-center justify-between border-b border-gray-50 pb-2 text-sm last:border-0"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{quota.playerName}</p>
+                  <p className="text-xs text-gray-400">
+                    Vence {formatDate(quota.dueDate)}
+                    {quota.contactPhone ? ` · ${quota.contactPhone}` : ""}
+                  </p>
+                </div>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <Badge variant="outline" className="border-orange-200 text-orange-600">
+                    Pendiente
+                  </Badge>
+                  <span className="font-mono font-semibold">
+                    {formatMoney(quota.totalAmount)}
+                  </span>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
       </div>

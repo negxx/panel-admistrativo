@@ -1,410 +1,315 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { trpc } from "@/providers/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 import {
-  Baby,
-  CreditCard,
   AlertCircle,
   CheckCircle2,
   Clock,
+  Copy,
+  CreditCard,
+  Hourglass,
   LogOut,
   User,
+  Users,
 } from "lucide-react";
-import { toast } from "sonner";
+import { trpc } from "@/providers/trpc";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatDate, formatMoney, formatPeriod, initials } from "@/lib/format";
 
-function formatMoney(amount: number) {
-  return `$ ${amount.toLocaleString("es-AR")}`;
-}
-
-// Tipo para cuotas pendientes (unificado)
-type PendingQuota = {
-  id: number;
-  playerId: number;
-  playerName: string | null;
-  month: number;
-  year: number;
-  baseAmount: number;
-  discountAmount: number | null;
-  interestAmount: number | null;
-  totalAmount: number;
-  dueDate: string;
-  status: string;
-};
-
+/**
+ * Portal de socios.
+ *
+ * Toda la información sale de un único endpoint autenticado por cookie
+ * (`portal.dashboard`). El frontend ya no manda ningún id de socio: antes lo
+ * leía de `localStorage` y cualquiera podía cambiarlo para ver la cuenta de otra
+ * familia.
+ *
+ * El botón de pagar **informa** un pago, no lo da por cobrado: la cuota queda
+ * "en revisión" hasta que el club confirma que la plata llegó.
+ */
 export default function PortalDashboard() {
   const navigate = useNavigate();
-  const [guardianId, setGuardianId] = useState<number | null>(null);
-  const [isPlayer, setIsPlayer] = useState(false);
-  const [paymentDialog, setPaymentDialog] = useState(false);
-  const [selectedQuotas, setSelectedQuotas] = useState<number[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<"transfer" | "mercadopago">("mercadopago");
-
-  useEffect(() => {
-    const stored = localStorage.getItem("portalGuardianId");
-    const storedIsPlayer = localStorage.getItem("portalIsPlayer");
-    if (stored) {
-      setGuardianId(Number(stored));
-      setIsPlayer(storedIsPlayer === "true");
-    } else {
-      navigate("/portal");
-    }
-  }, [navigate]);
+  const [payDialog, setPayDialog] = useState(false);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [method, setMethod] = useState<"transfer" | "mercadopago">("transfer");
+  const [reference, setReference] = useState("");
 
   const utils = trpc.useUtils();
+  const { data, isLoading, error } = trpc.portal.dashboard.useQuery(undefined, { retry: false });
 
-  // Queries para TUTOR
-  const { data: children } = trpc.portal.getMyChildren.useQuery(
-    { guardianId: guardianId! },
-    { enabled: !!guardianId && !isPlayer }
-  );
-  const { data: pendingQuotasTutor } = trpc.portal.getPendingQuotas.useQuery(
-    { guardianId: guardianId! },
-    { enabled: !!guardianId && !isPlayer }
-  );
+  const logout = trpc.portal.logout.useMutation({
+    onSuccess: async () => {
+      await utils.portal.invalidate();
+      navigate("/portal");
+    },
+  });
 
-  // Queries para JUGADOR
-  const { data: myQuotas } = trpc.portal.getMyQuotas.useQuery(
-    { playerId: guardianId! },
-    { enabled: !!guardianId && isPlayer }
-  );
-
-  // Historial de pagos (usa guardianId para ambos)
-  const { data: paymentHistory } = trpc.portal.getPaymentHistory.useQuery(
-    { guardianId: guardianId! },
-    { enabled: !!guardianId }
-  );
-
-  // Mutations
-  const payQuotas = trpc.portal.payQuotas.useMutation({
+  const reportPayment = trpc.portal.reportPayment.useMutation({
     onSuccess: () => {
-      toast.success("Pago registrado correctamente!");
-      setPaymentDialog(false);
-      setSelectedQuotas([]);
-      utils.portal.getMyChildren.invalidate();
-      utils.portal.getPendingQuotas.invalidate();
-      utils.portal.getPaymentHistory.invalidate();
+      toast.success("¡Listo! Informamos tu pago al club. Te avisamos cuando lo confirmen.");
+      setPayDialog(false);
+      setSelected([]);
+      setReference("");
+      utils.portal.dashboard.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
 
-  const payPlayerQuotas = trpc.portal.payPlayerQuotas.useMutation({
-    onSuccess: () => {
-      toast.success("Pago registrado correctamente!");
-      setPaymentDialog(false);
-      setSelectedQuotas([]);
-      utils.portal.getMyQuotas.invalidate();
-      utils.portal.getPaymentHistory.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  // Si la sesión venció o no existe, vuelve al login.
+  useEffect(() => {
+    if (error?.data?.code === "UNAUTHORIZED") navigate("/portal", { replace: true });
+  }, [error, navigate]);
 
-  const handleLogout = () => {
-    localStorage.removeItem("portalGuardianId");
-    localStorage.removeItem("portalIsPlayer");
-    navigate("/portal");
-  };
+  const payableQuotas = useMemo(
+    () =>
+      (data?.members ?? []).flatMap((member) =>
+        member.pendingQuotas
+          .filter((quota) => !quota.awaitingReview)
+          .map((quota) => ({ ...quota, playerName: member.name })),
+      ),
+    [data],
+  );
 
-  if (!guardianId) return null;
+  const selectedTotal = payableQuotas
+    .filter((q) => selected.includes(q.id))
+    .reduce((sum, q) => sum + q.totalAmount, 0);
 
-  // Datos unificados
-  const allPending: PendingQuota[] = isPlayer
-    ? (myQuotas?.pendingQuotas ?? []).map(q => ({
-        ...q,
-        playerName: myQuotas?.player?.name ?? "Socio",
-      }))
-    : (pendingQuotasTutor ?? []);
+  if (isLoading) {
+    return <p className="py-12 text-center text-white/70">Cargando tu cuenta…</p>;
+  }
+  if (!data) return null;
 
-  const totalPending = isPlayer
-    ? (myQuotas?.totalPending ?? 0)
-    : allPending.reduce((s, q) => s + q.totalAmount, 0);
+  const isGuardian = data.account.kind === "guardian";
 
-  // Agrupar por hijo (solo para tutor)
-  const groupedByChild = !isPlayer
-    ? allPending.reduce<Record<number, PendingQuota[]>>((acc, q) => {
-        if (!acc[q.playerId]) acc[q.playerId] = [];
-        acc[q.playerId].push(q);
-        return acc;
-      }, {})
-    : {};
-
-  // Handler de pago unificado
-  const handlePayment = () => {
-    if (selectedQuotas.length === 0) return;
-
-    if (isPlayer) {
-      payPlayerQuotas.mutate({
-        playerId: guardianId,
-        quotaIds: selectedQuotas,
-        paymentMethod,
-      });
-    } else {
-      payQuotas.mutate({
-        guardianId,
-        quotaIds: selectedQuotas,
-        paymentMethod,
-      });
-    }
+  const copy = (value: string, label: string) => {
+    navigator.clipboard.writeText(value).then(
+      () => toast.success(`${label} copiado`),
+      () => toast.error("No se pudo copiar"),
+    );
   };
 
   return (
     <div className="space-y-6">
-      {/* Welcome */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">Mi Cuenta</h2>
+          <h2 className="text-2xl font-bold text-white">Hola, {data.account.name}</h2>
           <p className="text-white/70">
-            {isPlayer ? "Gestion de mis cuotas" : "Gestion de cuotas y pagos"}
+            {isGuardian ? "Cuotas de tu familia" : "Tus cuotas del club"}
           </p>
         </div>
         <Button
           variant="ghost"
           size="sm"
-          className="text-white/70 hover:text-white hover:bg-white/10"
-          onClick={handleLogout}
+          className="text-white/70 hover:bg-white/10 hover:text-white"
+          onClick={() => logout.mutate()}
         >
-          <LogOut className="w-4 h-4 mr-1" /> Salir
+          <LogOut className="mr-1 h-4 w-4" /> Salir
         </Button>
       </div>
 
-      {/* Summary */}
       <div className="grid grid-cols-2 gap-4">
-        <Card className="border-0 bg-white/10 backdrop-blur text-white">
+        <Card className="border-0 bg-white/10 text-white backdrop-blur">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/10 rounded-lg">
-                {isPlayer ? <User className="w-5 h-5" /> : <Baby className="w-5 h-5" />}
+              <div className="rounded-lg bg-white/10 p-2">
+                {isGuardian ? <Users className="h-5 w-5" /> : <User className="h-5 w-5" />}
               </div>
               <div>
-                <p className="text-sm text-white/60">
-                  {isPlayer ? "Mi Categoria" : "Mis Hijos"}
-                </p>
+                <p className="text-sm text-white/60">{isGuardian ? "Socios a cargo" : "Categoría"}</p>
                 <p className="text-xl font-bold">
-                  {isPlayer ? (myQuotas?.player?.category ?? "-") : (children?.length ?? 0)}
+                  {isGuardian ? data.members.length : (data.members[0]?.category ?? "—")}
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-0 bg-white/10 backdrop-blur text-white">
+        <Card className="border-0 bg-white/10 text-white backdrop-blur">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-500/20 rounded-lg">
-                <AlertCircle className="w-5 h-5 text-red-300" />
+              <div className="rounded-lg bg-red-500/20 p-2">
+                <AlertCircle className="h-5 w-5 text-red-300" />
               </div>
               <div>
-                <p className="text-sm text-white/60">Pendiente</p>
-                <p className="text-xl font-bold font-mono">{formatMoney(totalPending)}</p>
+                <p className="text-sm text-white/60">A pagar</p>
+                <p className="font-mono text-xl font-bold">{formatMoney(data.totalPending)}</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Pay Button */}
-      {allPending.length > 0 && (
+      {data.hasPendingReview && (
+        <div className="flex items-start gap-3 rounded-lg bg-amber-400/20 p-4 text-sm text-amber-50">
+          <Hourglass className="mt-0.5 h-5 w-5 flex-shrink-0" />
+          <div>
+            <p className="font-semibold">Tenés un pago en revisión</p>
+            <p className="text-amber-100/80">
+              Ya recibimos tu aviso. Cuando el club verifique la transferencia, la cuota va a figurar
+              como pagada.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {payableQuotas.length > 0 && (
         <Button
-          className="w-full h-14 bg-[#ffc107] hover:bg-[#e6af06] text-[#1a237e] text-lg font-bold shadow-lg"
-          onClick={() => setPaymentDialog(true)}
+          className="h-14 w-full bg-[#ffc107] text-lg font-bold text-[#1a237e] shadow-lg hover:bg-[#e6af06]"
+          onClick={() => setPayDialog(true)}
         >
-          <CreditCard className="w-5 h-5 mr-2" /> Pagar Cuotas
+          <CreditCard className="mr-2 h-5 w-5" /> Pagar cuotas
         </Button>
       )}
 
-      {/* Content: JUGADOR */}
-      {isPlayer && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-white">Mis Cuotas</h3>
-          {myQuotas?.pendingQuotas && myQuotas.pendingQuotas.length > 0 ? (
-            <Card className="border-0 bg-white/95 backdrop-blur">
-              <CardContent className="pt-4">
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold text-white">
+          {isGuardian ? "Socios a cargo" : "Mis cuotas"}
+        </h3>
+
+        {data.members.map((member) => (
+          <Card key={member.id} className="border-0 bg-white/95 backdrop-blur">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#1a237e] text-sm font-bold text-white">
+                    {initials(member.name)}
+                  </div>
+                  <div className="min-w-0">
+                    <CardTitle className="truncate text-base">{member.name}</CardTitle>
+                    <p className="text-xs text-gray-500">
+                      Categoría {member.category} · DNI {member.dni}
+                    </p>
+                  </div>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={
+                    member.totalPending > 0
+                      ? "bg-red-50 text-red-700"
+                      : "bg-green-50 text-green-700"
+                  }
+                >
+                  {member.totalPending > 0 ? formatMoney(member.totalPending) : "Al día"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {member.pendingQuotas.length === 0 ? (
+                <div className="flex items-center gap-2 px-2 py-2 text-xs text-green-600">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>Todas las cuotas están al día</span>
+                </div>
+              ) : (
                 <div className="space-y-1.5">
-                  {myQuotas.pendingQuotas.map((q) => (
+                  {member.pendingQuotas.map((quota) => (
                     <div
-                      key={q.id}
-                      className="flex items-center justify-between py-1.5 px-2 bg-gray-50 rounded text-xs"
+                      key={quota.id}
+                      className="flex items-center justify-between gap-2 rounded bg-gray-50 px-2 py-1.5 text-xs"
                     >
                       <div className="flex items-center gap-2">
-                        {q.status === "overdue" ? (
-                          <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                        {quota.status === "overdue" ? (
+                          <AlertCircle className="h-3.5 w-3.5 text-red-500" />
                         ) : (
-                          <Clock className="w-3.5 h-3.5 text-orange-500" />
+                          <Clock className="h-3.5 w-3.5 text-orange-500" />
                         )}
-                        <span>
-                          {q.month}/{q.year}
-                        </span>
+                        <span>{formatPeriod(quota.month, quota.year)}</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-gray-400">Vence: {q.dueDate}</span>
-                        <Badge
-                          variant="outline"
-                          className={`text-xs ${
-                            q.status === "overdue"
-                              ? "text-red-600 border-red-200"
-                              : "text-orange-600 border-orange-200"
-                          }`}
-                        >
-                          {q.status === "overdue" ? "Vencida" : "Pendiente"}
-                        </Badge>
-                        <span className="font-mono font-semibold min-w-[70px] text-right">
-                          {formatMoney(q.totalAmount)}
+                        <span className="hidden text-gray-400 sm:inline">
+                          Vence {formatDate(quota.dueDate)}
+                        </span>
+                        {quota.awaitingReview ? (
+                          <Badge variant="outline" className="border-amber-200 text-amber-700">
+                            En revisión
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className={
+                              quota.status === "overdue"
+                                ? "border-red-200 text-red-600"
+                                : "border-orange-200 text-orange-600"
+                            }
+                          >
+                            {quota.status === "overdue" ? "Vencida" : "Pendiente"}
+                          </Badge>
+                        )}
+                        <span className="min-w-[70px] text-right font-mono font-semibold">
+                          {formatMoney(quota.totalAmount)}
                         </span>
                       </div>
                     </div>
                   ))}
+                  {member.pendingQuotas.some((q) => q.interestAmount > 0) && (
+                    <p className="px-2 text-[11px] text-gray-400">
+                      Los importes vencidos incluyen intereses por mora.
+                    </p>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-0 bg-white/95 backdrop-blur">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-xs text-green-600">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Todas las cuotas estan al dia</span>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
-      {/* Content: TUTOR */}
-      {!isPlayer && (
+      {data.payments.length > 0 && (
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-white">Mis Hijos</h3>
-          {children?.map((child) => {
-            const childPending = child.pendingQuotas;
-            return (
-              <Card key={child.id} className="border-0 bg-white/95 backdrop-blur">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#1a237e] flex items-center justify-center text-white font-bold text-sm">
-                        {child.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")
-                          .slice(0, 2)}
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">{child.name}</CardTitle>
-                        <p className="text-xs text-gray-500">
-                          Categoria {child.category} | DNI: {child.dni}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={
-                        child.totalPending > 0
-                          ? "bg-red-50 text-red-700"
-                          : "bg-green-50 text-green-700"
-                      }
-                    >
-                      {child.totalPending > 0
-                        ? `${formatMoney(child.totalPending)}`
-                        : "Al dia"}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                {childPending.length > 0 && (
-                  <CardContent className="pt-0">
-                    <div className="space-y-1.5">
-                      {childPending.map((q) => (
-                        <div
-                          key={q.id}
-                          className="flex items-center justify-between py-1.5 px-2 bg-gray-50 rounded text-xs"
-                        >
-                          <div className="flex items-center gap-2">
-                            {q.status === "overdue" ? (
-                              <AlertCircle className="w-3.5 h-3.5 text-red-500" />
-                            ) : (
-                              <Clock className="w-3.5 h-3.5 text-orange-500" />
-                            )}
-                            <span>
-                              {q.month}/{q.year}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-gray-400">Vence: {q.dueDate}</span>
-                            <Badge
-                              variant="outline"
-                              className={`text-xs ${
-                                q.status === "overdue"
-                                  ? "text-red-600 border-red-200"
-                                  : "text-orange-600 border-orange-200"
-                              }`}
-                            >
-                              {q.status === "overdue" ? "Vencida" : "Pendiente"}
-                            </Badge>
-                            <span className="font-mono font-semibold min-w-[70px] text-right">
-                              {formatMoney(q.totalAmount)}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                )}
-                {childPending.length === 0 && (
-                  <CardContent className="pt-0">
-                    <div className="flex items-center gap-2 py-2 px-2 text-xs text-green-600">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Todas las cuotas estan al dia</span>
-                    </div>
-                  </CardContent>
-                )}
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Payment History */}
-      {paymentHistory && paymentHistory.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-white">Historial de Pagos</h3>
+          <h3 className="text-lg font-semibold text-white">Historial de pagos</h3>
           <Card className="border-0 bg-white/95 backdrop-blur">
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50/50">
-                      <th className="text-left py-3 px-4 font-semibold text-gray-600">
-                        Fecha
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-600">
-                        Detalle
-                      </th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-600">
-                        Monto
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-600">
-                        Recibo
-                      </th>
+                    <tr className="border-b border-gray-200 bg-gray-50/50 text-left text-gray-600">
+                      <th className="px-4 py-3 font-semibold">Fecha</th>
+                      <th className="px-4 py-3 font-semibold">Detalle</th>
+                      <th className="px-4 py-3 text-right font-semibold">Monto</th>
+                      <th className="px-4 py-3 font-semibold">Estado</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {paymentHistory.map((p) => (
-                      <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                        <td className="py-3 px-4 text-gray-500">{p.paymentDate}</td>
-                        <td className="py-3 px-4">
-                          <div className="text-xs text-gray-500">
-                            {p.quotas
-                              .map((q) => `${q.playerName} (${q.month}/${q.year})`)
+                    {data.payments.map((payment) => (
+                      <tr key={payment.id} className="border-b border-gray-50 last:border-0">
+                        <td className="px-4 py-3 text-gray-500">
+                          {formatDate(payment.paymentDate)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-xs text-gray-500">
+                            {payment.detail
+                              .map((d) => `${d.playerName} (${formatPeriod(d.month, d.year)})`)
                               .join(", ")}
-                          </div>
+                          </p>
+                          {payment.receiptNumber && (
+                            <p className="font-mono text-[11px] text-gray-400">
+                              Recibo {payment.receiptNumber}
+                            </p>
+                          )}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono font-semibold text-green-600">
-                          {formatMoney(p.totalAmount)}
+                        <td className="px-4 py-3 text-right font-mono font-semibold">
+                          {formatMoney(payment.totalAmount)}
                         </td>
-                        <td className="py-3 px-4 text-gray-400 text-xs">
-                          {p.receiptNumber ?? "-"}
+                        <td className="px-4 py-3">
+                          {payment.status === "confirmed" && (
+                            <Badge variant="outline" className="border-green-200 text-green-700">
+                              Confirmado
+                            </Badge>
+                          )}
+                          {payment.status === "pending_review" && (
+                            <Badge variant="outline" className="border-amber-200 text-amber-700">
+                              En revisión
+                            </Badge>
+                          )}
+                          {payment.status === "rejected" && (
+                            <Badge variant="outline" className="border-gray-200 text-gray-500">
+                              Rechazado
+                            </Badge>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -416,185 +321,110 @@ export default function PortalDashboard() {
         </div>
       )}
 
-      {/* Payment Dialog */}
-      <Dialog open={paymentDialog} onOpenChange={setPaymentDialog}>
-        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+      {/* Informar pago */}
+      <Dialog open={payDialog} onOpenChange={setPayDialog}>
+        <DialogContent className="max-h-[85vh] max-w-md overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Pagar Cuotas</DialogTitle>
+            <DialogTitle>Informar un pago</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <p className="text-sm text-gray-500">
-              Seleccione las cuotas que desea pagar:
-            </p>
+            <p className="text-sm text-gray-500">Elegí las cuotas que estás pagando:</p>
 
-            {/* JUGADOR: cuotas directas */}
-            {isPlayer &&
-              myQuotas?.pendingQuotas &&
-              myQuotas.pendingQuotas.length > 0 && (
-                <div className="space-y-1.5">
-                  {myQuotas.pendingQuotas.map((q) => (
-                    <div
-                      key={q.id}
-                      className="flex items-center gap-2 py-1 px-2 bg-gray-50 rounded text-xs"
-                    >
-                      <Checkbox
-                        checked={selectedQuotas.includes(q.id)}
-                        onCheckedChange={(checked) => {
-                          setSelectedQuotas((prev) =>
-                            checked
-                              ? [...prev, q.id]
-                              : prev.filter((id) => id !== q.id)
-                          );
-                        }}
-                      />
-                      <span className="flex-1">
-                        {q.month}/{q.year}
-                      </span>
-                      <Badge
-                        variant="outline"
-                        className={`text-xs ${
-                          q.status === "overdue"
-                            ? "text-red-600 border-red-200"
-                            : "text-orange-600 border-orange-200"
-                        }`}
-                      >
-                        {q.status === "overdue" ? "Vencida" : "Pendiente"}
-                      </Badge>
-                      <span className="font-mono font-semibold min-w-[70px] text-right">
-                        {formatMoney(q.totalAmount)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="space-y-1.5">
+              {payableQuotas.map((quota) => (
+                <label
+                  key={quota.id}
+                  className="flex cursor-pointer items-center gap-2 rounded bg-gray-50 px-2 py-1.5 text-xs"
+                >
+                  <Checkbox
+                    checked={selected.includes(quota.id)}
+                    onCheckedChange={(checked) =>
+                      setSelected((prev) =>
+                        checked ? [...prev, quota.id] : prev.filter((id) => id !== quota.id),
+                      )
+                    }
+                  />
+                  <span className="flex-1">
+                    {isGuardian && <strong>{quota.playerName} · </strong>}
+                    {formatPeriod(quota.month, quota.year)}
+                  </span>
+                  <span className="min-w-[70px] text-right font-mono font-semibold">
+                    {formatMoney(quota.totalAmount)}
+                  </span>
+                </label>
+              ))}
+            </div>
 
-            {/* TUTOR: cuotas agrupadas por hijo */}
-            {!isPlayer &&
-              Object.entries(groupedByChild).map(([childId, quotas]) => {
-                const child = children?.find((c) => c.id === Number(childId));
-                if (!child) return null;
-                const childSelected = selectedQuotas.filter((sq) =>
-                  quotas.some((q) => q.id === sq)
-                );
-                return (
-                  <div
-                    key={childId}
-                    className="border border-gray-200 rounded-lg p-3"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Baby className="w-4 h-4 text-[#1a237e]" />
-                      <span className="font-semibold text-sm">{child.name}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {childSelected.length}/{quotas.length}
-                      </Badge>
-                    </div>
-                    <div className="space-y-1.5">
-                      {quotas.map((q) => (
-                        <div
-                          key={q.id}
-                          className="flex items-center gap-2 py-1 px-2 bg-gray-50 rounded text-xs"
-                        >
-                          <Checkbox
-                            checked={selectedQuotas.includes(q.id)}
-                            onCheckedChange={(checked) => {
-                              setSelectedQuotas((prev) =>
-                                checked
-                                  ? [...prev, q.id]
-                                  : prev.filter((id) => id !== q.id)
-                              );
-                            }}
-                          />
-                          <span className="flex-1">
-                            {q.month}/{q.year}
-                          </span>
-                          <Badge
-                            variant="outline"
-                            className={`text-xs ${
-                              q.status === "overdue"
-                                ? "text-red-600 border-red-200"
-                                : "text-orange-600 border-orange-200"
-                            }`}
-                          >
-                            {q.status === "overdue" ? "Vencida" : "Pendiente"}
-                          </Badge>
-                          <span className="font-mono font-semibold min-w-[70px] text-right">
-                            {formatMoney(q.totalAmount)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-
-            <div className="bg-gray-50 p-3 rounded-lg flex justify-between items-center">
-              <span className="font-semibold">Total a pagar:</span>
-              <span className="text-xl font-bold font-mono">
-                {formatMoney(
-                  allPending
-                    .filter((q) => selectedQuotas.includes(q.id))
-                    .reduce((s, q) => s + q.totalAmount, 0)
-                )}
-              </span>
+            <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+              <span className="font-semibold">Total</span>
+              <span className="font-mono text-xl font-bold">{formatMoney(selectedTotal)}</span>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Metodo de pago</label>
-              <Select
-                value={paymentMethod}
-                onValueChange={(v) =>
-                  setPaymentMethod(v as "transfer" | "mercadopago")
-                }
-              >
+              <Label>¿Cómo pagaste?</Label>
+              <Select value={method} onValueChange={(v) => setMethod(v as typeof method)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="mercadopago">MercadoPago (online)</SelectItem>
                   <SelectItem value="transfer">Transferencia bancaria</SelectItem>
+                  <SelectItem value="mercadopago">MercadoPago</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {paymentMethod === "transfer" && (
-              <div className="bg-blue-50 p-3 rounded text-xs space-y-1">
-                <p className="font-semibold text-blue-800">
-                  Datos para transferencia:
-                </p>
-                <p>Banco: Banco Nacion</p>
-                <p>CBU: 0110123456789012345678</p>
-                <p>Alias: CLUB.ATLETICO.PAGO</p>
-                <p>Cuenta: Caja de Ahorro $</p>
-                <p className="text-blue-600 mt-1">
-                  Enviar comprobante por WhatsApp
-                </p>
+            {method === "transfer" && data.bank.bankCbu && (
+              <div className="space-y-1.5 rounded bg-blue-50 p-3 text-xs">
+                <p className="font-semibold text-blue-800">Datos para transferir</p>
+                <p>Banco: {data.bank.bankName || "—"}</p>
+                <p>Titular: {data.bank.bankHolder || data.bank.clubName}</p>
+                <div className="flex items-center gap-2">
+                  <span>CBU: {data.bank.bankCbu}</span>
+                  <button type="button" onClick={() => copy(data.bank.bankCbu, "CBU")}>
+                    <Copy className="h-3.5 w-3.5 text-blue-600" />
+                  </button>
+                </div>
+                {data.bank.bankAlias && (
+                  <div className="flex items-center gap-2">
+                    <span>Alias: {data.bank.bankAlias}</span>
+                    <button type="button" onClick={() => copy(data.bank.bankAlias, "Alias")}>
+                      <Copy className="h-3.5 w-3.5 text-blue-600" />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
+            <div className="space-y-1.5">
+              <Label>Número de comprobante</Label>
+              <Input
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                placeholder="Opcional, pero ayuda a encontrar tu pago"
+              />
+            </div>
+
+            <p className="rounded bg-amber-50 p-3 text-xs text-amber-800">
+              Al enviar, el club revisa la transferencia y confirma el pago. Recién ahí la cuota
+              figura como pagada.
+            </p>
+
             <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setPaymentDialog(false)}
-              >
+              <Button variant="outline" onClick={() => setPayDialog(false)}>
                 Cancelar
               </Button>
               <Button
                 className="bg-[#ffc107] text-[#1a237e] hover:bg-[#e6af06]"
-                disabled={
-                  selectedQuotas.length === 0 ||
-                  (isPlayer
-                    ? payPlayerQuotas.isPending
-                    : payQuotas.isPending)
+                disabled={selected.length === 0 || reportPayment.isPending}
+                onClick={() =>
+                  reportPayment.mutate({
+                    quotaIds: selected,
+                    paymentMethod: method,
+                    reference: reference || undefined,
+                  })
                 }
-                onClick={handlePayment}
               >
-                {isPlayer
-                  ? payPlayerQuotas.isPending
-                    ? "Procesando..."
-                    : "Confirmar Pago"
-                  : payQuotas.isPending
-                  ? "Procesando..."
-                  : "Confirmar Pago"}
+                {reportPayment.isPending ? "Enviando…" : "Informar pago"}
               </Button>
             </div>
           </div>

@@ -1,204 +1,234 @@
 import { useState } from "react";
-import { useEffect } from "react";
-import { useNavigate } from "react-router";
-import { Outlet, Link, useLocation } from "react-router";
+import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import {
-  LayoutDashboard,
-  Users,
-  Receipt,
-  UserCircle,
-  ArrowLeftRight,
   AlertTriangle,
-  Menu,
-  X,
-  Shield,
-  LogOut,
+  ArrowLeftRight,
+  Inbox,
+  LayoutDashboard,
   Lock,
+  LogOut,
+  Menu,
+  Receipt,
+  Settings,
+  Shield,
   Tag,
+  UserCircle,
+  Users,
+  X,
 } from "lucide-react";
+import { useEffect } from "react";
+import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
-const navItems = [
-  { path: "/", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/socios", label: "Socios Deportivos", icon: Users },
-  { path: "/cuotas", label: "Cuotas y Pagos", icon: Receipt },
+/**
+ * Estructura del panel.
+ *
+ * Novedades:
+ *  - El menú se filtra por rol: a la secretaría ya no se le muestran pantallas
+ *    que el backend le va a rechazar igual.
+ *  - "Pagos a confirmar" lleva un contador en vivo con los pagos que informaron
+ *    los socios desde el portal.
+ */
+
+type NavItem = {
+  path: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  /** Si está en `true`, sólo lo ve un administrador. */
+  adminOnly?: boolean;
+  /** Clave del contador a mostrar al lado. */
+  badge?: "pendingPayments";
+};
+
+const NAV_ITEMS: NavItem[] = [
+  { path: "/", label: "Panel", icon: LayoutDashboard },
+  { path: "/socios", label: "Socios", icon: Users },
   { path: "/familias", label: "Familias", icon: UserCircle },
-  { path: "/ingresos-egresos", label: "Ingresos y Egresos", icon: ArrowLeftRight },
-  { path: "/deudores", label: "Deudores y Alertas", icon: AlertTriangle },
-  { path: "/usuarios", label: "Usuarios", icon: Shield },
-  { path: "/cierre-caja", label: "Cierre de Caja", icon: Lock },
-  { path: "/categorias", label: "Categorias", icon: Tag },
+  { path: "/cuotas", label: "Cuotas y pagos", icon: Receipt },
+  { path: "/pagos-pendientes", label: "Pagos a confirmar", icon: Inbox, badge: "pendingPayments" },
+  { path: "/deudores", label: "Deudores", icon: AlertTriangle },
+  { path: "/cierre-caja", label: "Cierre de caja", icon: Lock },
+  { path: "/ingresos-egresos", label: "Ingresos y egresos", icon: ArrowLeftRight },
+  { path: "/categorias", label: "Categorías", icon: Tag },
+  { path: "/usuarios", label: "Usuarios", icon: Shield, adminOnly: true },
+  { path: "/configuracion", label: "Configuración", icon: Settings },
 ];
 
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
-  const { user, logout, isLoading } = useAuth();
   const navigate = useNavigate();
+  const { user, logout, isLoading } = useAuth();
+
+  // Contador de pagos del portal esperando confirmación. Se refresca solo cada
+  // minuto para que la secretaría vea los avisos nuevos sin recargar.
+  const { data: pendingPayments } = trpc.payment.pendingReviewCount.useQuery(undefined, {
+    enabled: !!user,
+    refetchInterval: 60_000,
+  });
 
   useEffect(() => {
-    if (!isLoading && !user) {
-      navigate("/login", { replace: true });
-    }
+    if (!isLoading && !user) navigate("/login", { replace: true });
   }, [isLoading, user, navigate]);
 
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#f8f9fa]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#ffc107]" />
+        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-[#ffc107]" />
       </div>
     );
   }
-  
+
+  if (!user) return null;
+
+  const items = NAV_ITEMS.filter((item) => !item.adminOnly || user.role === "admin");
+  const currentLabel = items.find((item) => item.path === location.pathname)?.label ?? "Panel";
+
+  const badgeValue = (item: NavItem) =>
+    item.badge === "pendingPayments" && pendingPayments ? pendingPayments : 0;
+
+  const renderNav = (collapsed: boolean, onNavigate?: () => void) =>
+    items.map((item) => {
+      const isActive = location.pathname === item.path;
+      const Icon = item.icon;
+      const count = badgeValue(item);
+      return (
+        <Link
+          key={item.path}
+          to={item.path}
+          onClick={onNavigate}
+          title={collapsed ? item.label : undefined}
+          className={cn(
+            "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all",
+            isActive
+              ? "border-l-2 border-[#ffc107] bg-[#ffc107]/15 text-[#ffc107]"
+              : "text-white/70 hover:bg-white/5 hover:text-white",
+          )}
+        >
+          <div className="relative flex-shrink-0">
+            <Icon className="h-5 w-5" />
+            {collapsed && count > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-[#ffc107]" />
+            )}
+          </div>
+          {!collapsed && (
+            <>
+              <span className="flex-1 text-sm font-medium">{item.label}</span>
+              {count > 0 && (
+                <Badge className="bg-[#ffc107] px-1.5 text-xs text-[#0d1642] hover:bg-[#ffc107]">
+                  {count}
+                </Badge>
+              )}
+            </>
+          )}
+        </Link>
+      );
+    });
+
   return (
     <div className="flex h-screen bg-[#f8f9fa]">
-      {/* Desktop Sidebar */}
+      {/* Barra lateral de escritorio */}
       <aside
-        className={`hidden lg:flex flex-col bg-[#0d1642] text-white transition-all duration-300 ${
-          sidebarOpen ? "w-64" : "w-[72px]"
-        }`}
+        className={cn(
+          "hidden flex-col bg-[#0d1642] text-white transition-all duration-300 lg:flex",
+          sidebarOpen ? "w-64" : "w-[72px]",
+        )}
       >
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-4 h-16 border-b border-white/10">
-          <div className="w-8 h-8 rounded-full bg-[#ffc107] flex items-center justify-center flex-shrink-0">
-            <Shield className="w-5 h-5 text-[#0d1642]" />
+        <div className="flex h-16 items-center gap-3 border-b border-white/10 px-4">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#ffc107]">
+            <Shield className="h-5 w-5 text-[#0d1642]" />
           </div>
           {sidebarOpen && (
             <div className="overflow-hidden">
-              <p className="font-bold text-sm leading-tight">Club Atletico</p>
-              <p className="text-[10px] text-white/60">Sistema de Gestion</p>
+              <p className="text-sm font-bold leading-tight">Club</p>
+              <p className="text-[10px] text-white/60">Sistema de gestión</p>
             </div>
           )}
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 py-4 space-y-1 px-2">
-          {navItems.map((item) => {
-            const isActive = location.pathname === item.path;
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
-                  isActive
-                    ? "bg-[#ffc107]/15 text-[#ffc107] border-l-2 border-[#ffc107]"
-                    : "text-white/70 hover:bg-white/5 hover:text-white"
-                }`}
-              >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                {sidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
+          {renderNav(!sidebarOpen)}
         </nav>
 
-        {/* Bottom */}
-        <div className="p-2 border-t border-white/10">
+        <div className="border-t border-white/10 p-2">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/70 hover:bg-white/5 hover:text-white w-full"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-white/70 hover:bg-white/5 hover:text-white"
           >
-            <Menu className="w-5 h-5 flex-shrink-0" />
+            <Menu className="h-5 w-5 flex-shrink-0" />
             {sidebarOpen && <span className="text-sm">Contraer</span>}
           </button>
         </div>
       </aside>
 
-      {/* Mobile Sidebar Overlay */}
+      {/* Menú móvil */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
-
-      {/* Mobile Sidebar */}
       <aside
-        className={`fixed lg:hidden inset-y-0 left-0 z-50 w-64 bg-[#0d1642] text-white transform transition-transform ${
-          mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 w-64 transform bg-[#0d1642] text-white transition-transform lg:hidden",
+          mobileMenuOpen ? "translate-x-0" : "-translate-x-full",
+        )}
       >
-        <div className="flex items-center justify-between px-4 h-16 border-b border-white/10">
+        <div className="flex h-16 items-center justify-between border-b border-white/10 px-4">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-[#ffc107] flex items-center justify-center">
-              <Shield className="w-5 h-5 text-[#0d1642]" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffc107]">
+              <Shield className="h-5 w-5 text-[#0d1642]" />
             </div>
-            <div>
-              <p className="font-bold text-sm">Club Atletico</p>
-              <p className="text-[10px] text-white/60">Sistema de Gestion</p>
-            </div>
+            <p className="text-sm font-bold">Club</p>
           </div>
           <button onClick={() => setMobileMenuOpen(false)}>
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
-        <nav className="py-4 space-y-1 px-2">
-          {navItems.map((item) => {
-            const isActive = location.pathname === item.path;
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
-                  isActive
-                    ? "bg-[#ffc107]/15 text-[#ffc107] border-l-2 border-[#ffc107]"
-                    : "text-white/70 hover:bg-white/5"
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-                <span className="text-sm font-medium">{item.label}</span>
-              </Link>
-            );
-          })}
+        <nav className="space-y-1 overflow-y-auto px-2 py-4">
+          {renderNav(false, () => setMobileMenuOpen(false))}
         </nav>
       </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Bar */}
-        <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-6 shadow-sm">
+      {/* Contenido */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 shadow-sm lg:px-6">
           <div className="flex items-center gap-3">
             <button
-              className="lg:hidden p-1.5 hover:bg-gray-100 rounded"
+              className="rounded p-1.5 hover:bg-gray-100 lg:hidden"
               onClick={() => setMobileMenuOpen(true)}
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="h-5 w-5" />
             </button>
-            <div>
-              <h1 className="text-lg font-bold text-[#1a1a2e]">
-                {navItems.find((n) => n.path === location.pathname)?.label ?? "Panel"}
-              </h1>
-            </div>
+            <h1 className="text-lg font-bold text-[#1a1a2e]">{currentLabel}</h1>
           </div>
+
           <div className="flex items-center gap-3">
             <Link
               to="/portal"
-              className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm bg-[#ffc107]/10 text-[#1a237e] rounded-lg hover:bg-[#ffc107]/20 transition-colors"
+              className="hidden items-center gap-2 rounded-lg bg-[#ffc107]/10 px-3 py-1.5 text-sm text-[#1a237e] transition-colors hover:bg-[#ffc107]/20 sm:flex"
             >
-              <Users className="w-4 h-4" />
-              <span>Portal de Pagos</span>
+              <Users className="h-4 w-4" />
+              <span>Portal de socios</span>
             </Link>
-            {user ? (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600 hidden md:block">{user.name}</span>
-                <Button variant="ghost" size="sm" onClick={logout} className="text-gray-600">
-                  <LogOut className="w-4 h-4" />
-                </Button>
+            <div className="flex items-center gap-2">
+              <div className="hidden text-right md:block">
+                <p className="text-sm leading-tight text-gray-700">{user.name}</p>
+                <p className="text-[11px] leading-tight text-gray-400">
+                  {user.role === "admin" ? "Administrador" : "Secretaría"}
+                </p>
               </div>
-            ) : (
-              <Link to="/login" className="text-sm text-[#1a237e] hover:underline">
-                Iniciar sesion
-              </Link>
-            )}
+              <Button variant="ghost" size="sm" onClick={logout} className="text-gray-600">
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </header>
 
-        {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Outlet />
         </main>

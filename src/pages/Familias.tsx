@@ -1,316 +1,456 @@
 import { useState } from "react";
-import { trpc } from "@/providers/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Users,
-  Search,
-  Plus,
-  CreditCard,
-  ChevronRight,
-  MessageCircle,
-  Receipt,
-  Baby,
-} from "lucide-react";
 import { toast } from "sonner";
+import { Eye, KeyRound, Pencil, Plus, Receipt, Search, Trash2, Users } from "lucide-react";
+import { trpc } from "@/providers/trpc";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { CobrarDialog, type CobrarPayer } from "@/components/CobrarDialog";
+import {
+  EmptyRow,
+  LoadingRows,
+  PageHeader,
+  Pagination,
+  PaymentStatusBadge,
+} from "@/components/ui-kit";
+import { formatDate, formatMoney, formatPeriod } from "@/lib/format";
 
-function formatMoney(amount: number) {
-  return `$ ${amount.toLocaleString("es-AR")}`;
-}
+/**
+ * Familias (tutores).
+ *
+ * La lista ahora muestra la deuda familiar consolidada y si la familia ya activó
+ * su acceso al portal. La baja de un tutor está protegida: si todavía tiene
+ * socios o pagos asociados, el backend la rechaza en vez de dejar registros
+ * huérfanos.
+ */
+
+const emptyForm = {
+  name: "",
+  dni: "",
+  phone: "",
+  email: "",
+  address: "",
+  whatsappEnabled: true,
+};
 
 export default function Familias() {
   const [search, setSearch] = useState("");
-  const [selectedGuardianId, setSelectedGuardianId] = useState<number | null>(null);
-  const [newGuardianDialog, setNewGuardianDialog] = useState(false);
-  const [paymentDialog, setPaymentDialog] = useState(false);
-  const [selectedChildrenQuotas, setSelectedChildrenQuotas] = useState<Record<number, number[]>>({});
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "transfer" | "mercadopago">("cash");
-  const [guardianForm, setGuardianForm] = useState({ name: "", dni: "", phone: "", email: "", address: "" });
+  const [onlyDebtors, setOnlyDebtors] = useState(false);
+  const [page, setPage] = useState(1);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [viewingId, setViewingId] = useState<number | null>(null);
+  const [payer, setPayer] = useState<CobrarPayer | null>(null);
 
   const utils = trpc.useUtils();
-  const { data: guardiansData } = trpc.guardian.list.useQuery({ search: search || undefined, page: 1, pageSize: 50 });
-  const { data: selectedGuardian } = trpc.guardian.getById.useQuery(
-    { id: selectedGuardianId! },
-    { enabled: !!selectedGuardianId }
+
+  const { data, isLoading } = trpc.guardian.list.useQuery({
+    search: search || undefined,
+    onlyDebtors: onlyDebtors || undefined,
+    page,
+    pageSize: 25,
+  });
+
+  const { data: viewing } = trpc.guardian.getById.useQuery(
+    { id: viewingId ?? 0 },
+    { enabled: viewingId !== null },
   );
 
-  const createGuardian = trpc.guardian.create.useMutation({
-    onSuccess: () => {
-      toast.success("Tutor agregado");
-      setNewGuardianDialog(false);
-      setGuardianForm({ name: "", dni: "", phone: "", email: "", address: "" });
-      utils.guardian.list.invalidate();
-    },
-  });
-
-  const registerFamilyPayment = trpc.payment.registerFamily.useMutation({
-    onSuccess: () => {
-      toast.success("Pago familiar registrado");
-      setPaymentDialog(false);
-      setSelectedChildrenQuotas({});
-      utils.guardian.getById.invalidate({ id: selectedGuardianId! });
-      utils.quota.list.invalidate();
-    },
-  });
-
-  const calculateTotal = () => {
-    let total = 0;
-    for (const [childId, quotaIds] of Object.entries(selectedChildrenQuotas)) {
-      const child = selectedGuardian?.children.find(c => c.id === Number(childId));
-      if (child) {
-        for (const qId of quotaIds) {
-          const quota = child.quotas.find(q => q.id === qId);
-          if (quota) total += quota.totalAmount;
-        }
-      }
-    }
-    return total;
+  const closeForm = () => {
+    setFormOpen(false);
+    setEditingId(null);
+    setForm(emptyForm);
   };
 
-  const anySelected = Object.values(selectedChildrenQuotas).some(arr => arr.length > 0);
+  const create = trpc.guardian.create.useMutation({
+    onSuccess: () => {
+      toast.success("Tutor creado");
+      closeForm();
+      utils.guardian.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const update = trpc.guardian.update.useMutation({
+    onSuccess: () => {
+      toast.success("Datos actualizados");
+      closeForm();
+      utils.guardian.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const remove = trpc.guardian.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Tutor eliminado");
+      utils.guardian.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const resetPin = trpc.guardian.resetPortalPin.useMutation({
+    onSuccess: () => {
+      toast.success("PIN blanqueado. La familia puede volver a activarlo desde el portal.");
+      utils.guardian.invalidate();
+    },
+  });
+
+  const submit = () => {
+    const payload = {
+      ...form,
+      email: form.email || undefined,
+      address: form.address || undefined,
+    };
+    if (editingId) update.mutate({ id: editingId, ...payload });
+    else create.mutate(payload);
+  };
+
+  const guardians = data?.guardians ?? [];
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-[#1a1a2e]">Familias</h2>
-          <p className="text-sm text-gray-500">Gestion de tutores y pagos por hijo</p>
-        </div>
-        <Button size="sm" className="bg-[#ffc107] text-[#1a237e] hover:bg-[#e6af06]" onClick={() => setNewGuardianDialog(true)}>
-          <Plus className="w-4 h-4 mr-1.5" /> Nuevo Tutor
-        </Button>
-      </div>
+      <PageHeader
+        title="Familias"
+        subtitle="Tutores responsables y su estado de cuenta"
+        actions={
+          <Button
+            onClick={() => {
+              setForm(emptyForm);
+              setEditingId(null);
+              setFormOpen(true);
+            }}
+          >
+            <Plus className="mr-1 h-4 w-4" /> Nuevo tutor
+          </Button>
+        }
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* Left: Guardian List */}
-        <Card className="lg:col-span-2 border border-gray-200">
-          <CardHeader className="pb-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input placeholder="Buscar tutor..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="max-h-[calc(100vh-280px)] overflow-y-auto">
-              {guardiansData?.guardians.map((g) => (
-                <button
-                  key={g.id}
-                  onClick={() => setSelectedGuardianId(g.id)}
-                  className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors flex items-center justify-between ${
-                    selectedGuardianId === g.id ? "bg-[#ffc107]/5 border-l-2 border-l-[#ffc107]" : ""
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-[#1a237e] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-                      {g.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm truncate">{g.name}</p>
-                      <p className="text-xs text-gray-400">DNI: {g.dni} | {g.playerCount} hijo(s)</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
-                </button>
-              ))}
-              {guardiansData && guardiansData.guardians.length === 0 && (
-                <p className="py-8 text-center text-gray-400 text-sm">No se encontraron tutores</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Right: Guardian Detail */}
-        <Card className="lg:col-span-3 border border-gray-200">
-          {selectedGuardian ? (
-            <>
-              <CardHeader className="pb-3 border-b border-gray-100">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-[#1a237e] flex items-center justify-center text-white font-bold text-lg">
-                      {selectedGuardian.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{selectedGuardian.name}</CardTitle>
-                      <p className="text-sm text-gray-500">DNI: {selectedGuardian.dni} | {selectedGuardian.phone}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    {selectedGuardian.phone && (
-                      <a href={`https://wa.me/${selectedGuardian.phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm"><MessageCircle className="w-4 h-4 text-green-600" /></Button>
-                      </a>
-                    )}
-                    {anySelected && (
-                      <Button size="sm" className="bg-[#ffc107] text-[#1a237e] hover:bg-[#e6af06]" onClick={() => setPaymentDialog(true)}>
-                        <CreditCard className="w-4 h-4 mr-1" /> Pagar
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-4 space-y-4">
-                {/* Children */}
-                {selectedGuardian.children.map((child) => {
-                  const pending = child.quotas.filter(q => q.status === "pending" || q.status === "overdue");
-                  const totalPending = pending.reduce((s, q) => s + q.totalAmount, 0);
-                  return (
-                    <div key={child.id} className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <Baby className="w-4 h-4 text-[#1a237e]" />
-                          <span className="font-semibold text-sm">{child.name}</span>
-                          <Badge variant="outline" className="text-xs">Cat. {child.category}</Badge>
-                        </div>
-                        <span className="text-sm font-mono font-semibold text-red-600">
-                          {totalPending > 0 ? `${formatMoney(totalPending)} pend.` : "Al dia"}
-                        </span>
-                      </div>
-
-                      {pending.length > 0 ? (
-                        <div className="space-y-1.5">
-                          {pending.map((q) => (
-                            <div key={q.id} className="flex items-center gap-3 py-1.5 px-2 bg-gray-50 rounded text-xs">
-                              <Checkbox
-                                checked={(selectedChildrenQuotas[child.id] ?? []).includes(q.id)}
-                                onCheckedChange={(checked) => {
-                                  setSelectedChildrenQuotas(prev => {
-                                    const current = prev[child.id] ?? [];
-                                    if (checked) {
-                                      return { ...prev, [child.id]: [...current, q.id] };
-                                    }
-                                    return { ...prev, [child.id]: current.filter(id => id !== q.id) };
-                                  });
-                                }}
-                              />
-                              <span className="flex-1">{q.month}/{q.year}</span>
-                              <span className="text-gray-500">Vence: {q.dueDate}</span>
-                              <Badge variant="outline" className={`text-xs ${q.status === "overdue" ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700"}`}>
-                                {q.status === "overdue" ? "Vencida" : "Pendiente"}
-                              </Badge>
-                              <span className="font-mono font-semibold min-w-[80px] text-right">{formatMoney(q.totalAmount)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-green-600 py-1">No hay cuotas pendientes</p>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {/* Payment History */}
-                {selectedGuardian.payments.length > 0 && (
-                  <div className="pt-2">
-                    <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
-                      <Receipt className="w-4 h-4" /> Historial de Pagos
-                    </h4>
-                    <div className="space-y-1 max-h-40 overflow-y-auto">
-                      {selectedGuardian.payments.slice(-5).reverse().map((p) => (
-                        <div key={p.id} className="flex items-center justify-between py-1.5 px-2 bg-gray-50 rounded text-xs">
-                          <span>{p.paymentDate}</span>
-                          <Badge variant="outline" className="text-xs capitalize">{p.paymentMethod}</Badge>
-                          <span className="font-mono font-semibold">{formatMoney(p.totalAmount)}</span>
-                          <span className="text-gray-400">{p.receiptNumber ?? "-"}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </>
-          ) : (
-            <div className="flex items-center justify-center h-64 text-gray-400">
-              <div className="text-center">
-                <Users className="w-10 h-10 mx-auto mb-2 opacity-40" />
-                <p>Seleccione un tutor para ver el detalle</p>
-              </div>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* New Guardian Dialog */}
-      <Dialog open={newGuardianDialog} onOpenChange={setNewGuardianDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Nuevo Tutor</DialogTitle></DialogHeader>
-          <div className="space-y-3 pt-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Nombre</Label><Input value={guardianForm.name} onChange={(e) => setGuardianForm({ ...guardianForm, name: e.target.value })} /></div>
-              <div className="space-y-1.5"><Label>DNI</Label><Input value={guardianForm.dni} onChange={(e) => setGuardianForm({ ...guardianForm, dni: e.target.value })} /></div>
-              <div className="space-y-1.5"><Label>Telefono</Label><Input value={guardianForm.phone} onChange={(e) => setGuardianForm({ ...guardianForm, phone: e.target.value })} /></div>
-              <div className="space-y-1.5"><Label>Email</Label><Input value={guardianForm.email} onChange={(e) => setGuardianForm({ ...guardianForm, email: e.target.value })} /></div>
-              <div className="space-y-1.5 col-span-2"><Label>Direccion</Label><Input value={guardianForm.address} onChange={(e) => setGuardianForm({ ...guardianForm, address: e.target.value })} /></div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setNewGuardianDialog(false)}>Cancelar</Button>
-              <Button className="bg-[#ffc107] text-[#1a237e] hover:bg-[#e6af06]" onClick={() => createGuardian.mutate(guardianForm)}>Guardar</Button>
-            </div>
+      <Card className="border border-gray-200">
+        <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Input
+              className="pl-9"
+              placeholder="Buscar por nombre o DNI…"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
           </div>
-        </DialogContent>
-      </Dialog>
+          <label className="flex items-center gap-2 whitespace-nowrap text-sm text-gray-600">
+            <Checkbox
+              checked={onlyDebtors}
+              onCheckedChange={(v) => {
+                setOnlyDebtors(Boolean(v));
+                setPage(1);
+              }}
+            />
+            Sólo con deuda
+          </label>
+        </CardContent>
+      </Card>
 
-      {/* Payment Dialog */}
-      <Dialog open={paymentDialog} onOpenChange={setPaymentDialog}>
+      <Card className="border border-gray-200">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50/50 text-left text-gray-600">
+                  <th className="px-4 py-3 font-semibold">Tutor</th>
+                  <th className="px-4 py-3 font-semibold">Contacto</th>
+                  <th className="px-4 py-3 text-center font-semibold">Socios</th>
+                  <th className="px-4 py-3 text-right font-semibold">Deuda</th>
+                  <th className="px-4 py-3 font-semibold">Portal</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading && <LoadingRows colSpan={6} />}
+                {!isLoading && guardians.length === 0 && (
+                  <EmptyRow colSpan={6} message="No hay tutores cargados." />
+                )}
+                {guardians.map((guardian) => (
+                  <tr key={guardian.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                    <td className="px-4 py-3">
+                      <p className="font-medium">{guardian.name}</p>
+                      <p className="text-xs text-gray-400">DNI {guardian.dni}</p>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      <p>{guardian.phone}</p>
+                      {guardian.email && (
+                        <p className="text-xs text-gray-400">{guardian.email}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Badge variant="outline" className="gap-1">
+                        <Users className="h-3 w-3" />
+                        {guardian.playerCount}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">
+                      {guardian.debtAmount > 0 ? (
+                        <span className="font-semibold text-red-600">
+                          {formatMoney(guardian.debtAmount)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {guardian.hasPortalAccess ? (
+                        <Badge variant="outline" className="border-green-200 text-green-700">
+                          Activado
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-gray-200 text-gray-500">
+                          Sin activar
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => setViewingId(guardian.id)}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setPayer({ kind: "guardian", id: guardian.id, name: guardian.name })
+                          }
+                        >
+                          <Receipt className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setEditingId(guardian.id);
+                            setForm({
+                              name: guardian.name,
+                              dni: guardian.dni,
+                              phone: guardian.phone,
+                              email: guardian.email ?? "",
+                              address: guardian.address ?? "",
+                              whatsappEnabled: guardian.whatsappEnabled ?? true,
+                            });
+                            setFormOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        {guardian.hasPortalAccess && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Blanquear PIN del portal"
+                            onClick={() => resetPin.mutate({ id: guardian.id })}
+                          >
+                            <KeyRound className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-red-500"
+                          onClick={() => remove.mutate({ id: guardian.id })}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            page={page}
+            totalPages={data?.totalPages ?? 1}
+            total={data?.total ?? 0}
+            onChange={setPage}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Alta / edición */}
+      <Dialog open={formOpen} onOpenChange={(open) => (open ? setFormOpen(true) : closeForm())}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Pago Familiar</DialogTitle></DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <p className="text-sm text-gray-500">Cuotas seleccionadas:</p>
-              {selectedGuardian?.children.map(child => {
-                const quotas = selectedChildrenQuotas[child.id] ?? [];
-                if (quotas.length === 0) return null;
-                const childTotal = child.quotas.filter(q => quotas.includes(q.id)).reduce((s, q) => s + q.totalAmount, 0);
-                return (
-                  <div key={child.id} className="flex justify-between text-sm mt-1">
-                    <span>{child.name} ({quotas.length} cuota{quotas.length > 1 ? 's' : ''})</span>
-                    <span className="font-mono font-medium">{formatMoney(childTotal)}</span>
-                  </div>
-                );
-              })}
-              <div className="border-t border-gray-200 mt-2 pt-2 flex justify-between">
-                <span className="font-semibold">Total</span>
-                <span className="font-bold font-mono text-lg">{formatMoney(calculateTotal())}</span>
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Editar tutor" : "Nuevo tutor"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div className="space-y-1.5">
+              <Label>Nombre y apellido</Label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>DNI</Label>
+                <Input
+                  inputMode="numeric"
+                  value={form.dni}
+                  onChange={(e) => setForm({ ...form, dni: e.target.value.replace(/\D/g, "") })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Teléfono</Label>
+                <Input
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="+549…"
+                />
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>Metodo de pago</Label>
-              <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as "cash" | "transfer" | "mercadopago")}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Efectivo</SelectItem>
-                  <SelectItem value="transfer">Transferencia</SelectItem>
-                  <SelectItem value="mercadopago">MercadoPago</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
             </div>
+            <div className="space-y-1.5">
+              <Label>Dirección</Label>
+              <Input
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+              <div>
+                <p className="text-sm font-medium">Recibe avisos por WhatsApp</p>
+                <p className="text-xs text-gray-500">Se usa en la pantalla de deudores.</p>
+              </div>
+              <Switch
+                checked={form.whatsappEnabled}
+                onCheckedChange={(v) => setForm({ ...form, whatsappEnabled: v })}
+              />
+            </div>
+            <p className="rounded bg-blue-50 p-3 text-xs text-blue-800">
+              El PIN del portal lo elige la familia la primera vez que entra, validando la fecha de
+              nacimiento del socio. Desde acá no se carga.
+            </p>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setPaymentDialog(false)}>Cancelar</Button>
+              <Button variant="outline" onClick={closeForm}>
+                Cancelar
+              </Button>
               <Button
-                className="bg-[#ffc107] text-[#1a237e] hover:bg-[#e6af06]"
-                onClick={() => {
-                  const selections = Object.entries(selectedChildrenQuotas)
-                    .filter(([, qIds]) => qIds.length > 0)
-                    .map(([playerId, quotaIds]) => ({ playerId: Number(playerId), quotaIds }));
-                  registerFamilyPayment.mutate({
-                    guardianId: selectedGuardianId!,
-                    playerSelections: selections,
-                    paymentMethod,
-                  });
-                }}
-                disabled={registerFamilyPayment.isPending}
+                onClick={submit}
+                disabled={!form.name || !form.dni || !form.phone || create.isPending || update.isPending}
               >
-                Confirmar Pago
+                {editingId ? "Guardar" : "Crear"}
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Ficha de la familia */}
+      <Dialog open={viewingId !== null} onOpenChange={(open) => !open && setViewingId(null)}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{viewing?.name}</DialogTitle>
+          </DialogHeader>
+          {viewing && (
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3 text-sm">
+                <span className="font-medium">Deuda familiar</span>
+                <span className="font-mono font-bold text-red-600">
+                  {formatMoney(viewing.debtAmount)}
+                </span>
+              </div>
+
+              <div>
+                <p className="mb-2 text-sm font-medium">Socios a cargo</p>
+                <div className="space-y-2">
+                  {viewing.children.length === 0 && (
+                    <p className="text-sm text-gray-400">No tiene socios asociados.</p>
+                  )}
+                  {viewing.children.map((child) => {
+                    const pending = child.quotas.filter((q) => q.status !== "paid");
+                    return (
+                      <div key={child.id} className="rounded-lg border border-gray-100 p-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{child.name}</p>
+                            <p className="text-xs text-gray-400">
+                              Categoría {child.category} · DNI {child.dni}
+                            </p>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className={
+                              pending.length > 0
+                                ? "border-red-200 text-red-700"
+                                : "border-green-200 text-green-700"
+                            }
+                          >
+                            {pending.length > 0 ? `${pending.length} impaga(s)` : "Al día"}
+                          </Badge>
+                        </div>
+                        {pending.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {pending.map((quota) => (
+                              <Badge key={quota.id} variant="outline" className="text-xs">
+                                {formatPeriod(quota.month, quota.year)} ·{" "}
+                                {formatMoney(quota.totalAmount)}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-sm font-medium">Últimos pagos</p>
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-100">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {viewing.payments.length === 0 && (
+                        <EmptyRow colSpan={4} message="Sin pagos registrados." />
+                      )}
+                      {viewing.payments.map((payment) => (
+                        <tr key={payment.id} className="border-b border-gray-50 last:border-0">
+                          <td className="px-3 py-2 text-gray-500">
+                            {formatDate(payment.paymentDate)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">
+                            {formatMoney(payment.totalAmount)}
+                          </td>
+                          <td className="px-3 py-2">
+                            <PaymentStatusBadge status={payment.status} />
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-400">
+                            {payment.receiptNumber ?? ""}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <CobrarDialog
+        payer={payer}
+        open={payer !== null}
+        onOpenChange={(open) => !open && setPayer(null)}
+      />
     </div>
   );
 }

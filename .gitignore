@@ -28,9 +28,13 @@ dist-ssr
 .env.*.local
 # Database
 *.db
+*.db-shm
+*.db-wal
+*.backup-*
 *.sqlite
 *.sqlite3
-db/migrations/*.sql
+# Las migraciones SÍ se versionan: son la única forma de levantar la base en
+# otra máquina de manera reproducible. Antes estaban ignoradas.
 # TypeScript cache
 *.tsbuildinfo
 # Build outputs
