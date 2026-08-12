@@ -91,7 +91,9 @@ Es repetible: si algo sale mal, corregís y lo volvés a correr.
 | `APP_SECRET` | El secreto que generaste |
 | `CRON_SECRET` | Otro secreto aleatorio, para el mantenimiento diario |
 
-`DIRECT_URL` no hace falta en Vercel: las migraciones se corren desde tu máquina.
+Con esas tres alcanza. `DIRECT_URL` no hace falta en Vercel (las migraciones se
+corren desde tu máquina) y las del OAuth de Kimi tampoco: es una vía opcional y,
+si no están, el botón "Ingresar con Kimi" ni aparece.
 
 5. **Deploy**.
 
@@ -178,3 +180,9 @@ serverless hay que usar el pooler sí o sí.
 
 **El cron no corre** — falta `CRON_SECRET` en Vercel, o no coincide. Los crons del
 plan gratuito corren una vez por día, no más seguido.
+
+**El sitio carga pero toda la API devuelve 500** — casi siempre es una variable
+de entorno obligatoria que falta: el servidor se cae al importar, antes de
+atender nada. Miralo en Vercel → Deployments → la función → Runtime Logs; el
+error dice qué variable falta. Sólo `APP_SECRET` y `DATABASE_URL` son
+obligatorias.

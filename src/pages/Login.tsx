@@ -6,19 +6,24 @@ import { Label } from "@/components/ui/label";
 import { trpc } from "@/providers/trpc";
 import { Users, Shield, ArrowRight } from "lucide-react";
 
-function getOAuthUrl() {
-  const kimiAuthUrl = import.meta.env.VITE_KIMI_AUTH_URL;
-  const appID = import.meta.env.VITE_APP_ID;
-  const redirectUri = `${window.location.origin}/api/oauth/callback`;
-  const state = btoa(redirectUri);
+const KIMI_AUTH_URL = import.meta.env.VITE_KIMI_AUTH_URL;
+const KIMI_APP_ID = import.meta.env.VITE_APP_ID;
 
-  const url = new URL(`${kimiAuthUrl}/api/oauth/authorize`);
-  url.searchParams.set("client_id", appID);
+/**
+ * El login con Kimi es opcional. Si el despliegue no lo configuró, el botón ni
+ * se muestra: antes aparecía igual y llevaba a una URL rota
+ * (`undefined/api/oauth/authorize`).
+ */
+const kimiEnabled = Boolean(KIMI_AUTH_URL && KIMI_APP_ID);
+
+function getOAuthUrl() {
+  const redirectUri = `${window.location.origin}/api/oauth/callback`;
+  const url = new URL(`${KIMI_AUTH_URL}/api/oauth/authorize`);
+  url.searchParams.set("client_id", KIMI_APP_ID);
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "profile");
-  url.searchParams.set("state", state);
-
+  url.searchParams.set("state", btoa(redirectUri));
   return url.toString();
 }
 
@@ -93,27 +98,31 @@ export default function Login() {
               </Button>
             </form>
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-muted-foreground">
-                  O continuar con
-                </span>
-              </div>
-            </div>
+            {kimiEnabled && (
+              <>
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-2 text-muted-foreground">
+                      O continuar con
+                    </span>
+                  </div>
+                </div>
 
-            <Button
-              variant="outline"
-              className="w-full"
-              size="lg"
-              onClick={() => {
-                window.location.href = getOAuthUrl();
-              }}
-            >
-              Sign in with Kimi
-            </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  size="lg"
+                  onClick={() => {
+                    window.location.href = getOAuthUrl();
+                  }}
+                >
+                  Ingresar con Kimi
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
 

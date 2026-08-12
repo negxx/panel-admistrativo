@@ -7,6 +7,7 @@ import { authenticateRequest } from "./kimi/auth";
 import { verifySessionToken } from "./kimi/session";
 import { getDb } from "./queries/connection";
 import { readPortalSession, type PortalIdentity } from "./lib/portal-session";
+import { env } from "./lib/env";
 
 /**
  * Usuario del panel, ya normalizado.
@@ -90,6 +91,10 @@ async function resolveLocalUser(headers: Headers): Promise<SessionUser | undefin
  * `secretary`, que es el permiso mínimo para operar el panel.
  */
 async function resolveKimiUser(headers: Headers): Promise<SessionUser | undefined> {
+  // Si el OAuth no está configurado no hay nada que resolver por esta vía, y de
+  // paso se evita una consulta a la base en cada request.
+  if (!env.kimiEnabled) return undefined;
+
   try {
     const user = await authenticateRequest(headers);
     if (!user) return undefined;

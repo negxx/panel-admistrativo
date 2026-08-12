@@ -37,14 +37,29 @@ async function exchangeAuthCode(
   return resp.json() as Promise<TokenResponse>;
 }
 
-const jwks = jose.createRemoteJWKSet(
-  new URL(`${env.kimiAuthUrl}/api/.well-known/jwks.json`),
-);
+/**
+ * Juego de claves públicas de Kimi, creado **la primera vez que se usa**.
+ *
+ * Antes se construía al importar el módulo. Si el OAuth no estaba configurado,
+ * `new URL("")` lanzaba "Invalid URL" y se caía todo el servidor al arrancar —
+ * incluso para quien sólo iba a usar el login local.
+ */
+let jwksCache: ReturnType<typeof jose.createRemoteJWKSet> | null = null;
+
+function getJwks() {
+  if (!env.kimiEnabled) {
+    throw new Error("El login con Kimi no está configurado en este servidor");
+  }
+  jwksCache ??= jose.createRemoteJWKSet(
+    new URL(`${env.kimiAuthUrl}/api/.well-known/jwks.json`),
+  );
+  return jwksCache;
+}
 
 async function verifyAccessToken(
   accessToken: string,
 ): Promise<{ userId: string; clientId: string }> {
-  const { payload } = await jose.jwtVerify(accessToken, jwks);
+  const { payload } = await jose.jwtVerify(accessToken, getJwks());
   const userId = payload.user_id as string;
   const clientId = payload.client_id as string;
   if (!userId) {
@@ -74,6 +89,14 @@ export async function authenticateRequest(headers: Headers) {
 
 export function createOAuthCallbackHandler() {
   return async (c: Context) => {
+    // Si el OAuth no está configurado, se responde claro en vez de fallar raro.
+    if (!env.kimiEnabled) {
+      return c.json(
+        { error: "El login con Kimi no está habilitado. Usá usuario y contraseña." },
+        501,
+      );
+    }
+
     const code = c.req.query("code");
     const state = c.req.query("state");
     const error = c.req.query("error");
