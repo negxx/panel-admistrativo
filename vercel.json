@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build:web",
+  "buildCommand": "npm run build:vercel",
   "outputDirectory": "dist/public",
   "framework": null,
   "rewrites": [
@@ -18,5 +18,10 @@
       "path": "/api/cron/maintenance",
       "schedule": "0 6 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "server-dist/**"
+    }
+  }
 }

@@ -43,3 +43,6 @@ build/
 # Test coverage
 coverage/
 .nyc_output/
+
+# Servidor empaquetado para Vercel (lo genera el build)
+server-dist/*.mjs

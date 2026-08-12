@@ -1,52 +1,27 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { handle } from "@hono/node-server/vercel";
+import app from "../server-dist/app.mjs";
 
 /**
  * Punto de entrada de Vercel.
  *
- * Los módulos se cargan con `import()` **dentro** del handler, no arriba. Así,
- * si algo falla al importar (una variable de entorno que falta, un módulo que no
- * resuelve), el error se puede capturar y responder con un mensaje entendible en
- * lugar de un `FUNCTION_INVOCATION_FAILED` pelado, que no dice nada y obliga a
- * ir a buscar los logs del panel.
+ * Importa el servidor **ya empaquetado en un único archivo** (`server-dist/app.mjs`,
+ * generado por `npm run build:vercel`). Antes importaba `../server/boot` y fallaba
+ * con `Cannot find module '/var/task/server/boot'`, por dos motivos encadenados:
  *
- * El costo es despreciable: Vercel mantiene el módulo cargado entre
- * invocaciones, así que el `import()` sólo hace trabajo la primera vez.
+ *   1. Vercel no incluía la carpeta `server/` en el paquete de la función.
+ *   2. El proyecto es ESM, donde los imports sin extensión no resuelven en Node.
+ *      Agregar `.js` a mano habría implicado tocar los cientos de imports
+ *      internos de `server/`.
+ *
+ * Empaquetar resuelve las dos de una: el archivo no tiene imports relativos.
+ *
+ * `@hono/node-server/vercel` es el adaptador correcto para funciones de Vercel
+ * sin Next.js: adapta a la firma `(req, res)` de Node. `hono/vercel` es el de
+ * Next.js App Router y acá falla con `FUNCTION_INVOCATION_FAILED`.
  */
+const honoHandler = handle(app);
 
-let cachedHandler: ((req: IncomingMessage, res: ServerResponse) => unknown) | null = null;
-
-async function buildHandler() {
-  // `@hono/node-server/vercel` es el adaptador para funciones de Vercel sin
-  // Next.js: adapta a la firma `(req, res)` de Node. `hono/vercel` es el de
-  // Next.js App Router y acá falla.
-  const { handle } = await import("@hono/node-server/vercel");
-  const app = (await import("../server/boot")).default;
-  return handle(app);
-}
-
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  try {
-    cachedHandler ??= await buildHandler();
-    return await cachedHandler(req, res);
-  } catch (error) {
-    const err = error as Error;
-    console.error("[api] Falló la inicialización:", err);
-
-    res.statusCode = 500;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(
-      JSON.stringify(
-        {
-          error: "El servidor no pudo inicializarse",
-          detalle: err?.message ?? String(error),
-          origen: (err?.stack ?? "")
-            .split("\n")
-            .slice(1, 5)
-            .map((line) => line.trim()),
-        },
-        null,
-        2,
-      ),
-    );
-  }
+export default function handler(req: IncomingMessage, res: ServerResponse) {
+  return honoHandler(req, res);
 }
