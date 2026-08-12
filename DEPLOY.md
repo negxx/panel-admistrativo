@@ -181,6 +181,12 @@ serverless hay que usar el pooler sí o sí.
 **El cron no corre** — falta `CRON_SECRET` en Vercel, o no coincide. Los crons del
 plan gratuito corren una vez por día, no más seguido.
 
+**`FUNCTION_INVOCATION_FAILED` en todos los endpoints** — el adaptador de Hono
+equivocado. En un proyecto Vercel sin Next.js hay que usar
+`@hono/node-server/vercel`, no `hono/vercel` (ese es para Next.js App Router y
+devuelve un handler con firma Web, mientras que Vercel invoca las funciones con
+la firma `(req, res)` de Node).
+
 **El sitio carga pero toda la API devuelve 500** — casi siempre es una variable
 de entorno obligatoria que falta: el servidor se cae al importar, antes de
 atender nada. Miralo en Vercel → Deployments → la función → Runtime Logs; el
