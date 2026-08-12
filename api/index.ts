@@ -1,26 +1,52 @@
-import { handle } from "@hono/node-server/vercel";
-import app from "../server/boot";
+import type { IncomingMessage, ServerResponse } from "node:http";
 
 /**
  * Punto de entrada de Vercel.
  *
- * **El adaptador importa.** Hay dos y no son intercambiables:
+ * Los módulos se cargan con `import()` **dentro** del handler, no arriba. Así,
+ * si algo falla al importar (una variable de entorno que falta, un módulo que no
+ * resuelve), el error se puede capturar y responder con un mensaje entendible en
+ * lugar de un `FUNCTION_INVOCATION_FAILED` pelado, que no dice nada y obliga a
+ * ir a buscar los logs del panel.
  *
- *   - `hono/vercel` es para Next.js App Router: devuelve un handler de tipo Web
- *     (`Request` → `Response`).
- *   - `@hono/node-server/vercel` es para funciones de Vercel sin Next.js, que es
- *     nuestro caso: adapta a la firma `(req, res)` de Node que Vercel usa al
- *     invocarlas.
- *
- * Usar el primero hacía que Vercel le pasara un objeto de Node donde esperaba un
- * `Request`, y fallaba con `FUNCTION_INVOCATION_FAILED` en todos los endpoints.
- *
- * El ruteo lo hace el rewrite de `vercel.json`, que manda `/api/*` acá. El
- * rewrite **conserva la ruta original** en el request, así que Hono ve
- * `/api/trpc/loquesea` y rutea normalmente.
- *
- * Todo el backend vive en `server/` porque Vercel convierte en función
- * serverless cada archivo dentro de `api/`: si estuviera acá, cada router y cada
- * helper se publicaría como un endpoint separado.
+ * El costo es despreciable: Vercel mantiene el módulo cargado entre
+ * invocaciones, así que el `import()` sólo hace trabajo la primera vez.
  */
-export default handle(app);
+
+let cachedHandler: ((req: IncomingMessage, res: ServerResponse) => unknown) | null = null;
+
+async function buildHandler() {
+  // `@hono/node-server/vercel` es el adaptador para funciones de Vercel sin
+  // Next.js: adapta a la firma `(req, res)` de Node. `hono/vercel` es el de
+  // Next.js App Router y acá falla.
+  const { handle } = await import("@hono/node-server/vercel");
+  const app = (await import("../server/boot")).default;
+  return handle(app);
+}
+
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  try {
+    cachedHandler ??= await buildHandler();
+    return await cachedHandler(req, res);
+  } catch (error) {
+    const err = error as Error;
+    console.error("[api] Falló la inicialización:", err);
+
+    res.statusCode = 500;
+    res.setHeader("content-type", "application/json; charset=utf-8");
+    res.end(
+      JSON.stringify(
+        {
+          error: "El servidor no pudo inicializarse",
+          detalle: err?.message ?? String(error),
+          origen: (err?.stack ?? "")
+            .split("\n")
+            .slice(1, 5)
+            .map((line) => line.trim()),
+        },
+        null,
+        2,
+      ),
+    );
+  }
+}
