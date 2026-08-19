@@ -51,9 +51,25 @@ export function getDb(): Db {
       prepare: false,
       // Una conexión por instancia: del resto se encarga el pooler.
       max: 1,
-      // Cierra conexiones ociosas rápido, así no quedan colgadas entre requests.
-      idle_timeout: 20,
-      connect_timeout: 10,
+
+      /**
+       * Sin esto, `postgres-js` pide el catálogo de tipos al conectar: un viaje
+       * de ida y vuelta extra en cada arranque en frío, que en serverless es
+       * justo el momento más caro.
+       */
+      fetch_types: false,
+
+      /**
+       * Vercel congela la función entre invocaciones. Al descongelarla, la
+       * conexión guardada puede estar muerta sin que se note, y una consulta
+       * sobre un socket muerto **se queda esperando para siempre**.
+       *
+       * Con estos tiempos la conexión se recicla seguido y, si algo falla, falla
+       * rápido y con error en vez de colgarse.
+       */
+      idle_timeout: 10,
+      max_lifetime: 60 * 5,
+      connect_timeout: 8,
     });
 
     globalForDb.__clubSql = sql;

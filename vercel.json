@@ -21,7 +21,8 @@
   ],
   "functions": {
     "api/index.ts": {
-      "includeFiles": "server-dist/**"
+      "includeFiles": "server-dist/**",
+      "maxDuration": 20
     }
   }
 }
