@@ -148,6 +148,36 @@ Supabase pause el proyecto por inactividad.
 
 ---
 
+## 7. Cerrar la API REST de Supabase (importante)
+
+Supabase publica **todas las tablas** por una API REST propia, accesible con la
+clave *publishable*, que por diseño es pública y viaja en el navegador. Este
+sistema no usa esa API —se conecta directo a Postgres— pero la puerta queda
+abierta igual: sin protección, cualquiera puede leer el padrón completo con
+nombres y DNIs de menores, teléfonos de las familias y todos los pagos.
+
+Ya está resuelto en el código: la migración `0001_habilita_rls.sql` activa Row
+Level Security en todas las tablas y le quita los permisos a los roles de la API.
+Se aplica sola con `npm run db:migrate`.
+
+Comprobalo desde afuera (tiene que devolver 401):
+
+```bash
+curl "https://TU-PROYECTO.supabase.co/rest/v1/players?select=*"   -H "apikey: TU_CLAVE_PUBLISHABLE"
+```
+
+La aplicación no se ve afectada: se conecta con el rol `postgres`, que es dueño
+de las tablas y omite RLS.
+
+**Recomendado además:** en Supabase → Settings → Data API, desactivá la API por
+completo. Si el proyecto no la usa, apagarla elimina la superficie de ataque en
+vez de solo protegerla.
+
+Cuando agregues tablas nuevas, acordate de habilitarles RLS. El **Advisor** de
+Supabase avisa si alguna queda sin protección.
+
+---
+
 ## Antes de que entre la primera familia
 
 | Qué | Dónde |

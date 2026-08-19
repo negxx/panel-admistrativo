@@ -256,6 +256,16 @@ y se migran solos la primera vez que la persona ingresa bien.
 Hay **límite de intentos**: 8 por minuto en el login del panel, 5 en el PIN del
 portal, con bloqueo temporal. Un PIN de 4 dígitos son 10.000 combinaciones.
 
+### La API REST de Supabase, desactivada
+
+Supabase publica todas las tablas por una API REST propia, accesible con una
+clave que por diseño es pública. Este sistema no la usa —se conecta directo a
+Postgres— así que la migración `0001_habilita_rls.sql` activa Row Level Security
+en todas las tablas y le quita los permisos a los roles de esa API.
+
+Sin eso, cualquiera con la URL del proyecto podía leer el padrón completo. **Si
+agregás una tabla nueva, habilitale RLS.**
+
 ### Sesiones
 
 Dos cookies distintas, ambas `httpOnly` y `sameSite: lax`:
