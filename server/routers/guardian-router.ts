@@ -43,11 +43,14 @@ export const guardianRouter = createRouter({
         );
       }
       if (input.onlyDebtors) {
+        // Las columnas de la tabla externa se escriben calificadas a mano:
+        // Drizzle las interpola sin prefijo y, dentro de una subconsulta que
+        // ya tiene `players`, un `"id"` suelto es ambiguo.
         conditions.push(sql`(
           SELECT COALESCE(SUM(q."totalAmount"), 0)
           FROM quotas q
           JOIN players p ON p.id = q."playerId"
-          WHERE p."guardianId" = ${schema.guardians.id} AND q.status IN ('pending','overdue')
+          WHERE p."guardianId" = guardians.id AND q.status IN ('pending','overdue')
         ) > 0`);
       }
       const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -70,12 +73,12 @@ export const guardianRouter = createRouter({
           hasPortalAccess: sql<boolean>`(${schema.guardians.pin} IS NOT NULL)`,
           playerCount: sql<number>`(
             SELECT COUNT(*) FROM players p
-            WHERE p."guardianId" = ${schema.guardians.id} AND p.status = 'active'
+            WHERE p."guardianId" = guardians.id AND p.status = 'active'
           )::integer`,
           debtAmount: sql<number>`(
             SELECT COALESCE(SUM(q."totalAmount"), 0) FROM quotas q
             JOIN players p ON p.id = q."playerId"
-            WHERE p."guardianId" = ${schema.guardians.id} AND q.status IN ('pending','overdue')
+            WHERE p."guardianId" = guardians.id AND q.status IN ('pending','overdue')
           )::integer`,
         })
         .from(schema.guardians)

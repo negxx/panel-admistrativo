@@ -45,9 +45,30 @@ function migrationSql(): string {
   return cachedDdl;
 }
 
+/**
+ * Roles que Supabase crea solo y un PostgreSQL común no tiene.
+ *
+ * La migración que cierra la API REST les revoca los permisos, así que sin ellos
+ * no se puede aplicar acá. Crearlos vacíos alcanza para que las migraciones
+ * corran igual que en producción.
+ */
+const SUPABASE_ROLES = `
+  DO $$
+  BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+      CREATE ROLE anon NOLOGIN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+      CREATE ROLE authenticated NOLOGIN;
+    END IF;
+  END
+  $$;
+`;
+
 /** Crea una base vacía en memoria con el esquema completo. */
 export async function createTestDb() {
   const client = new PGlite();
+  await client.exec(SUPABASE_ROLES);
   await client.exec(migrationSql());
   return drizzle(client, { schema: { ...schema, ...relations } });
 }

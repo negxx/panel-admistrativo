@@ -28,9 +28,12 @@ export const categoryRouter = createRouter({
         baseAmount: schema.categories.baseAmount,
         siblingDiscountPercent: schema.categories.siblingDiscountPercent,
         description: schema.categories.description,
+        // `categories.name` va calificado a mano: sin el prefijo, dentro de la
+        // subconsulta `"name"` resolvía a `players.name` y el conteo daba
+        // siempre cero, sin ningún error que lo delatara.
         playerCount: sql<number>`(
           SELECT COUNT(*) FROM players p
-          WHERE p.category = ${schema.categories.name} AND p.status = 'active'
+          WHERE p.category = categories.name AND p.status = 'active'
         )::integer`,
       })
       .from(schema.categories)

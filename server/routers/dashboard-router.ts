@@ -115,9 +115,17 @@ export const dashboardRouter = createRouter({
     const db = getDb();
     const year = currentYear();
 
+    /**
+     * Se agrupa por el número de mes y el formato se arma en JavaScript.
+     *
+     * La versión anterior usaba `make_date(year, month, 1)` en el SELECT pero
+     * agrupaba sólo por `month`: Postgres lo rechaza porque `year` no está en el
+     * GROUP BY ni dentro de una función de agregación. SQLite lo toleraba, así
+     * que el error apareció recién al migrar.
+     */
     const expected = await db
       .select({
-        month: sql<string>`to_char(make_date(${schema.quotas.year}, ${schema.quotas.month}, 1), 'MM')`,
+        month: schema.quotas.month,
         total: sql<number>`COALESCE(SUM(${schema.quotas.totalAmount}), 0)::integer`,
       })
       .from(schema.quotas)
@@ -138,7 +146,9 @@ export const dashboardRouter = createRouter({
       )
       .groupBy(sql`to_char(${schema.payments.paymentDate}, 'MM')`);
 
-    const expectedByMonth = new Map(expected.map((e) => [e.month, Number(e.total)]));
+    const expectedByMonth = new Map(
+      expected.map((e) => [String(e.month).padStart(2, "0"), Number(e.total)]),
+    );
     const collectedByMonth = new Map(collected.map((c) => [c.month, Number(c.total)]));
 
     return Array.from({ length: 12 }, (_, i) => {

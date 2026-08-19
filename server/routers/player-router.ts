@@ -56,7 +56,7 @@ export const playerRouter = createRouter({
       if (guardianId) conditions.push(eq(schema.players.guardianId, guardianId));
       if (onlyDebtors) {
         conditions.push(
-          sql`EXISTS (SELECT 1 FROM quotas q WHERE q."playerId" = ${schema.players.id} AND q.status IN ('pending','overdue'))`,
+          sql`EXISTS (SELECT 1 FROM quotas q WHERE q."playerId" = players.id AND q.status IN ('pending','overdue'))`,
         );
       }
 
@@ -86,15 +86,15 @@ export const playerRouter = createRouter({
           guardianName: schema.guardians.name,
           pendingCount: sql<number>`(
             SELECT COUNT(*) FROM quotas q
-            WHERE q."playerId" = ${schema.players.id} AND q.status IN ('pending','overdue')
+            WHERE q."playerId" = players.id AND q.status IN ('pending','overdue')
           )::integer`,
           overdueCount: sql<number>`(
             SELECT COUNT(*) FROM quotas q
-            WHERE q."playerId" = ${schema.players.id} AND q.status = 'overdue'
+            WHERE q."playerId" = players.id AND q.status = 'overdue'
           )::integer`,
           debtAmount: sql<number>`(
             SELECT COALESCE(SUM(q."totalAmount"), 0) FROM quotas q
-            WHERE q."playerId" = ${schema.players.id} AND q.status IN ('pending','overdue')
+            WHERE q."playerId" = players.id AND q.status IN ('pending','overdue')
           )::integer`,
         })
         .from(schema.players)
