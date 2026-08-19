@@ -68,6 +68,7 @@ Usuarios que crea el seed: `admin / admin123` y `secretaria / secre123`.
 | `npm run db:push`    | Empuja el esquema sin migración (sólo para desarrollo)          |
 | `npm run db:seed`    | **Borra todo** y carga datos de ejemplo                         |
 | `npm run db:import`  | Importa una base SQLite vieja a Postgres                        |
+| `npm run db:check`   | Verifica la conexión sin mostrar la contraseña                  |
 
 ---
 
@@ -99,7 +100,7 @@ app/
 │   ├── pages/              Una pantalla por archivo
 │   ├── components/         Piezas compartidas
 │   └── lib/format.ts       Formato de plata, fechas y períodos
-└── scripts/                Actualización de base y arranque
+└── scripts/                Conexión, importación y arranque
 ```
 
 **La lógica de negocio vive en `server/domain/`**, separada de los endpoints. Esa
