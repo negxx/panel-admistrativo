@@ -7,6 +7,10 @@ recién ahí la cuota figura como pagada.
 
 ---
 
+📄 **[Auditoría de seguridad](SEGURIDAD.md)** · **[Puesta en producción](DEPLOY.md)**
+
+---
+
 ## Índice
 
 1. [Cómo levantarlo](#cómo-levantarlo)
@@ -234,6 +238,9 @@ las 22:00 cae en el cierre del día correcto.
 ---
 
 ## Seguridad
+
+El detalle de las vulnerabilidades que tenía el sistema, cómo se corrigieron y
+cómo se verificó cada corrección está en **[SEGURIDAD.md](SEGURIDAD.md)**.
 
 ### Quién puede hacer qué
 
