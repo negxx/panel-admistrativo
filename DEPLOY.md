@@ -117,18 +117,34 @@ Si más adelante comprás un dominio, en **Settings → Domains** de cada proyec
 apuntás `club.tudominio.com` y `admin.tudominio.com`. Es un cambio de DNS: para
 el club, transparente.
 
-## 6. Evitar que Supabase pause el proyecto
+## 6. Arranque en frío: mantenerlo despierto
 
-Los proyectos gratuitos se pausan tras unos días sin actividad. Un portal de club
-se usa en ráfagas (del 1 al 10 de cada mes), así que conviene mantenerlo despierto.
+En el plan gratuito, tras un rato sin uso la primera petición paga el arranque de
+**dos** cosas: la función de Vercel y la base de Supabase. Puede tardar entre
+varios segundos y agotar el tiempo. La segunda petición ya responde en menos de
+un segundo.
 
-El cron de mantenimiento que ya está configurado en `vercel.json` corre todos los
-días a las 6 y alcanza para eso, porque toca la base. Si querés doble red, podés
-agregar un ping gratuito desde [cron-job.org](https://cron-job.org) a:
+Qué hace el sistema al respecto:
+
+- La conexión a la base se recicla seguido, para no reutilizar una que quedó
+  muerta mientras la función estaba congelada (eso colgaba la consulta para
+  siempre en vez de fallar).
+- El frontend **reintenta** ante fallas de red y errores del servidor, incluidas
+  las mutaciones. Sin eso, la primera persona del día se encontraba con un login
+  que fallaba sin explicación.
+- La pantalla de login avisa "Despertando el servidor…" si tarda más de 3
+  segundos, para que no parezca colgado.
+
+**Lo que más ayuda es un ping periódico.** El cron de `vercel.json` corre una vez
+por día (es el máximo del plan gratuito), así que conviene agregar uno externo
+gratuito desde [cron-job.org](https://cron-job.org), cada 10 minutos, a:
 
 ```
 https://tu-proyecto.vercel.app/api/trpc/ping
 ```
+
+Con eso el club casi nunca se topa con el arranque en frío. Además evita que
+Supabase pause el proyecto por inactividad.
 
 ---
 

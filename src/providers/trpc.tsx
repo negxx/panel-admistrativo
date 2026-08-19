@@ -27,7 +27,37 @@ export type RouterInputs = inferRouterInputs<AppRouter>;
 // eslint-disable-next-line react-refresh/only-export-components
 export const trpc = createTRPCReact<AppRouter>();
 
-const queryClient = new QueryClient();
+/**
+ * En el plan gratuito, la primera petición tras un rato sin uso paga el arranque
+ * en frío de la función y de la base: puede tardar varios segundos o directamente
+ * agotar el tiempo. La segunda ya responde en menos de un segundo.
+ *
+ * Por eso se reintenta ante fallas de red y errores del servidor, incluidas las
+ * **mutaciones**: sin esto, la primera persona que entra al día se encontraba con
+ * un login que fallaba sin explicación.
+ *
+ * No se reintenta ante errores del cliente (401, 403, 409…): esos no mejoran
+ * repitiendo y sólo harían esperar de gusto.
+ */
+function shouldRetry(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 2) return false;
+  const status = (error as { data?: { httpStatus?: number } })?.data?.httpStatus;
+  if (status === undefined) return true; // falla de red o tiempo agotado
+  return status >= 500;
+}
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: shouldRetry,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
+    },
+    mutations: {
+      retry: shouldRetry,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
+    },
+  },
+});
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +31,7 @@ export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [tardando, setTardando] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -40,16 +40,25 @@ export default function Login() {
       utils.auth.me.invalidate();
       window.location.href = "/";
     },
-    onError: (err) => {
-      setError(err.message);
-      setLoading(false);
-    },
+    onError: (err) => setError(err.message),
   });
+
+  const loading = loginMutation.isPending;
+
+  /**
+   * En el plan gratuito, la primera entrada del día despierta el servidor y la
+   * base: puede tardar varios segundos. Sin este aviso parece que se colgó.
+   */
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setTimeout(() => setTardando(true), 3000);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
+    setTardando(false);
     loginMutation.mutate({ username, password });
   };
 
@@ -90,8 +99,13 @@ export default function Login() {
                   required
                 />
               </div>
-              {error && (
-                <p className="text-sm text-red-500">{error}</p>
+              {error && <p className="text-sm text-red-500">{error}</p>}
+
+              {loading && tardando && !error && (
+                <p className="text-sm text-gray-500">
+                  Despertando el servidor… la primera entrada del día puede tardar unos
+                  segundos.
+                </p>
               )}
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Ingresando..." : "Ingresar"}
