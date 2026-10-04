@@ -29,12 +29,18 @@ JavaScript, que este proyecto no usa — se conecta directo a Postgres con Drizz
 
 | Variable | Cuál copiar | Para qué |
 | --- | --- | --- |
-| `DATABASE_URL` | Pooler en modo **transacción**, puerto `6543` | La aplicación |
-| `DIRECT_URL` | Pooler en modo **sesión**, puerto `5432` | Crear tablas y migrar |
+| `DATABASE_URL` | Pooler en modo **sesión**, puerto `5432` | La aplicación |
+| `DIRECT_URL` | Pooler en modo **sesión**, puerto `5432` (la misma cadena) | Crear tablas y migrar |
 
-Los dos van por el pooler (`...pooler.supabase.com`). El modo transacción
-multiplexa conexiones, que es lo que necesita serverless, pero no soporta las
-sentencias que crean tablas; para eso está el modo sesión.
+Los dos van por el pooler (`...pooler.supabase.com`), en modo **sesión**. **No
+uses el modo transacción (puerto `6543`) para `DATABASE_URL`**, aunque sea la
+opción que Supabase marca por defecto para apps: en modo transacción el
+pooler puede cambiar el backend de Postgres entre una consulta y la
+siguiente, y esta app manda varias consultas en paralelo por request (tRPC
+batching — cualquier pantalla que pida varias cosas juntas). Con eso, la
+conexión se queda colgada para siempre, sin error ni timeout: las pantallas
+cargan sin mostrar nunca los datos. Modo sesión no tiene ese problema porque
+cada conexión tiene un backend fijo mientras dura.
 
 > **No uses la "Direct connection"** (`db.xxxx.supabase.co:5432`) aunque aparezca
 > en el panel: requiere IPv6 y suele fallar desde conexiones hogareñas.
@@ -87,7 +93,7 @@ Es repetible: si algo sale mal, corregís y lo volvés a correr.
 
 | Variable | Valor |
 | --- | --- |
-| `DATABASE_URL` | La del **pooler** (6543) |
+| `DATABASE_URL` | La del **pooler en modo sesión** (5432) — no la de 6543 |
 | `APP_SECRET` | El secreto que generaste |
 | `CRON_SECRET` | Otro secreto aleatorio, para el mantenimiento diario |
 
@@ -215,14 +221,21 @@ Con esta variante seguís necesitando un Postgres — puede ser el mismo de Supa
 **"Falta DATABASE_URL"** — no cargaste la variable en Vercel, o la cargaste sólo
 en Preview y no en Production.
 
-**Errores raros e intermitentes en las consultas** — estás usando la conexión
-directa (5432) en vez del pooler (6543) en `DATABASE_URL`.
+**Las pantallas se quedan cargando y nunca muestran datos, sin ningún error en
+la consola** — `DATABASE_URL` está apuntando al pooler en modo **transacción**
+(puerto `6543`) en vez de modo **sesión** (`5432`). Es el problema más común y
+el más difícil de notar porque no tira ningún error: la conexión simplemente
+se cuelga para siempre la primera vez que una pantalla dispara más de una
+consulta en paralelo (algo que pasa todo el tiempo con tRPC). Cambiá el puerto
+a `5432` en `DATABASE_URL`, tanto en tu `.env` como en Vercel.
 
-**`db:migrate` falla** — al revés: las migraciones necesitan `DIRECT_URL` (5432),
-no el pooler.
+**`db:migrate` falla** — las migraciones necesitan `DIRECT_URL`, que también
+tiene que ser el pooler en modo sesión (`5432`), no la conexión directa a
+Postgres.
 
-**"Max clients reached"** — `DATABASE_URL` apunta a la conexión directa. En
-serverless hay que usar el pooler sí o sí.
+**"Max clients reached"** — `DATABASE_URL` o `DIRECT_URL` apuntan a la conexión
+directa de verdad (`db.xxxx.supabase.co`, la que requiere IPv6) en vez del
+pooler. En serverless hay que usar el pooler sí o sí.
 
 **El cron no corre** — falta `CRON_SECRET` en Vercel, o no coincide. Los crons del
 plan gratuito corren una vez por día, no más seguido.

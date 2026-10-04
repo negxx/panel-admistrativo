@@ -7,21 +7,35 @@ import * as relations from "../../db/relations";
 const fullSchema = { ...schema, ...relations };
 
 /**
- * Conexión a PostgreSQL (Supabase).
+ * Conexión a PostgreSQL (Supabase, a través del pooler).
  *
- * Dos cosas importantes para que ande bien en Vercel:
+ * **`DATABASE_URL` tiene que ser el pooler en modo SESIÓN (puerto 5432), no el
+ * de modo transacción (puerto 6543).** Los dos multiplexan conexiones —lo que
+ * hace falta en serverless para no agotar el límite de Postgres— pero se
+ * comportan distinto ante consultas concurrentes:
  *
- * 1. **Hay que usar el pooler de Supabase**, no la conexión directa. En
- *    serverless cada invocación abre su propia conexión y el límite de Postgres
- *    se agota enseguida. Supabase expone un pooler en el puerto 6543 que
- *    multiplexa todo eso.
+ * - **Modo sesión (5432)**: cada conexión de la app tiene un backend de
+ *   Postgres dedicado mientras dura. Varias consultas en paralelo sobre esa
+ *   misma conexión andan bien.
+ * - **Modo transacción (6543)**: el backend puede cambiar entre una consulta y
+ *   la siguiente. Si la app manda más de una consulta en paralelo por la misma
+ *   conexión —y tRPC hace exactamente eso: cualquier pantalla que pida varias
+ *   cosas juntas dispara sus resolvers en paralelo—, las respuestas se
+ *   desincronizan y la conexión **se cuelga para siempre, sin error ni
+ *   timeout**. Así se veían Familias, Socios y el Panel: cargando sin mostrar
+ *   nada, y una vez que pasaba dejaba la conexión (y con ella al proceso
+ *   entero) inutilizable hasta reiniciar.
  *
- *        Directa (no usar):  ...supabase.com:5432/postgres
- *        Pooler  (usar):     ...pooler.supabase.com:6543/postgres?pgbouncer=true
+ * Verificado a mano: el mismo batch de consultas que se cuelga siempre contra
+ * el puerto 6543 anda perfecto contra el 5432, sin importar cuántas conexiones
+ * (`max`) se abran.
  *
- * 2. **`prepare: false`** — el pooler trabaja en modo transacción y no soporta
- *    prepared statements. Sin esto, las consultas fallan de forma intermitente
- *    y difícil de diagnosticar.
+ *        Puerto 6543 (no usar acá): ...pooler.supabase.com:6543/postgres
+ *        Puerto 5432 (usar):        ...pooler.supabase.com:5432/postgres
+ *
+ * `prepare: false` sigue haciendo falta: aunque el modo sesión sí soporta
+ * prepared statements, dejarlo apagado evita sorpresas si la cadena de
+ * conexión cambia de modo más adelante.
  *
  * La conexión se guarda en `globalThis` para reutilizarla mientras la instancia
  * sigue viva: Vercel mantiene las funciones "tibias" entre requests y así se
@@ -38,7 +52,7 @@ function connectionString(): string {
   if (!url) {
     throw new Error(
       "Falta DATABASE_URL. Copiá la cadena de conexión del pooler de Supabase " +
-        "(Project Settings → Database → Connection pooling, modo Transaction).",
+        "(Project Settings → Database → Connection pooling, modo Session, puerto 5432).",
     );
   }
   return url;
@@ -49,8 +63,10 @@ export function getDb(): Db {
     const sql = postgres(connectionString(), {
       // El pooler no soporta prepared statements.
       prepare: false,
-      // Una conexión por instancia: del resto se encarga el pooler.
-      max: 1,
+
+      // Unas pocas conexiones alcanzan para un club de este tamaño; el pooler
+      // se encarga de que no sean un problema para Postgres.
+      max: 5,
 
       /**
        * Sin esto, `postgres-js` pide el catálogo de tipos al conectar: un viaje

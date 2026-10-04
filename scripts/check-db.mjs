@@ -47,7 +47,7 @@ function validate(name, url) {
   return null;
 }
 
-const EXPECTED_PORT = { DATABASE_URL: "6543", DIRECT_URL: "5432" };
+const EXPECTED_PORT = { DATABASE_URL: "5432", DIRECT_URL: "5432" };
 
 let hasErrors = false;
 
@@ -69,9 +69,8 @@ for (const name of ["DATABASE_URL", "DIRECT_URL"]) {
   if (port !== EXPECTED_PORT[name]) {
     console.log(
       `   ⚠ se esperaba el puerto ${EXPECTED_PORT[name]}. ` +
-        (name === "DATABASE_URL"
-          ? "La app necesita el pooler en modo transacción (6543)."
-          : "Las migraciones necesitan el pooler en modo sesión (5432)."),
+        "El pooler en modo transacción (6543) se cuelga con las consultas en " +
+          "paralelo que hace esta app: usá modo sesión (5432) para las dos.",
     );
   }
   if (url.includes("pgbouncer=true")) {

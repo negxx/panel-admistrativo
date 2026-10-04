@@ -297,6 +297,14 @@ blanquea desde la ficha del socio o del tutor.
 
 PostgreSQL con [Drizzle ORM](https://orm.drizzle.team/), alojado en Supabase.
 
+**La conexión va por el pooler en modo sesión (puerto 5432), no en modo
+transacción (6543).** La app dispara varias consultas en paralelo por request
+(tRPC batching: cualquier pantalla que pida varias cosas juntas), y el modo
+transacción puede cambiar el backend de Postgres entre una consulta y la
+siguiente — con eso la conexión se cuelga para siempre, sin error ni timeout.
+Es la causa de que antes algunas pantallas se quedaran cargando sin mostrar
+nada.
+
 Los tests corren contra [PGlite](https://pglite.dev) —Postgres de verdad, en
 memoria— usando **los mismos archivos de migración** que producción. Así el SQL
 que se prueba es el que después corre en la nube, sin necesidad de Docker.
