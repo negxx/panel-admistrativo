@@ -336,7 +336,10 @@ export const alertRouter = createRouter({
    */
   whatsappStatus: staffProcedure.query(async () => {
     const wa = await import("../services/whatsapp");
-    const status = wa.getStatus();
+    // Ojo: getStatus incluye el socket de Baileys, un objeto circular enorme
+    // que rompe la serialización de tRPC (500 en cada consulta). No sale de
+    // este módulo.
+    const { socket: _socket, ...status } = wa.getStatus();
     return { ...status, qr: status.connected ? null : status.qr, aiEnabled: aiIsConfigured() };
   }),
 

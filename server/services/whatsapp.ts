@@ -67,11 +67,15 @@ export function setIncomingHandler(handler: ((msg: IncomingMessage) => void) | n
 async function start(): Promise<void> {
   if (state.socket) return;
 
+  console.log("[whatsapp] cargando baileys…");
   const baileys = await import("@whiskeysockets/baileys");
   const pino = (await import("pino")).default;
 
+  console.log("[whatsapp] leyendo estado de sesión…");
   const { state: authState, saveCreds } = await baileys.useMultiFileAuthState(AUTH_DIR);
+  console.log("[whatsapp] consultando versión de WhatsApp…");
   const { version } = await baileys.fetchLatestBaileysVersion();
+  console.log("[whatsapp] versión", version.join("."), "- abriendo socket…");
 
   const socket = baileys.default({
     version,
@@ -92,7 +96,13 @@ async function start(): Promise<void> {
       const text =
         msg.message?.conversation ?? msg.message?.extendedTextMessage?.text ?? null;
       if (!text) continue;
-      incomingHandler({ jid: msg.key.remoteJid, text: text.trim() });
+      // WhatsApp reemplazó en parte el JID teléfono por un identificador
+      // opaco ("@lid"); el número real llega en remoteJidAlt.
+      const phoneJid =
+        msg.key.remoteJid.endsWith("@lid") && msg.key.remoteJidAlt
+          ? msg.key.remoteJidAlt
+          : msg.key.remoteJid;
+      incomingHandler({ jid: phoneJid, text: text.trim() });
     }
   });
 
@@ -111,21 +121,26 @@ async function start(): Promise<void> {
     if (connection === "close") {
       state.connected = false;
       state.phone = null;
+      state.socket = null;
 
       const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)
         ?.output?.statusCode;
       const loggedOut = statusCode === baileys.DisconnectReason.loggedOut;
+      const replaced = statusCode === baileys.DisconnectReason.connectionReplaced;
 
       if (loggedOut) {
         // La sesión es inválida: hay que borrarla y volver a escanear el QR.
         state.lastError = "La sesión fue cerrada. Volvé a vincular con el QR.";
-        state.socket = null;
         if (existsSync(AUTH_DIR)) rmSync(AUTH_DIR, { recursive: true, force: true });
+      } else if (replaced) {
+        // Otra instancia (p. ej. un socket viejo del dev-server) tomó la
+        // sesión. Reconectar en loop haría ping-pong entre los dos: cortamos
+        // acá y se vuelve a intentar manualmente o al reiniciar el proceso.
+        state.lastError = "Otra instancia tomó la sesión de WhatsApp. Reintentá conectar.";
       } else {
         state.lastError = null;
-        state.socket = null;
         // Reconexión automática: Baileys no reintenta por su cuenta.
-        void connect();
+        setTimeout(() => void connect(), 3000);
       }
     }
   });
@@ -134,6 +149,7 @@ async function start(): Promise<void> {
 /** Asegura que el bot está arrancado (o arrancándose). Devuelve el estado. */
 export async function connect(): Promise<BotState> {
   if (!starting) {
+    console.log("[whatsapp] connect() llamado");
     starting = start()
       .then(async () => {
         // El asistente que responde mensajes se arma al conectar el bot.
@@ -143,6 +159,7 @@ export async function connect(): Promise<BotState> {
       })
       .catch((err) => {
         state.lastError = err instanceof Error ? err.message : String(err);
+        console.error("[whatsapp] error al conectar:", err);
       })
       .finally(() => {
         starting = null;

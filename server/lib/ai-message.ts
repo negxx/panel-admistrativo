@@ -84,6 +84,17 @@ export async function generateDebtMessage(params: {
  * bancarios **del remitente**, nunca confirma pagos por chat (eso pasa siempre
  * por el panel o el portal) y deriva cualquier otro tema a la secretaría.
  */
+/**
+ * Respuesta conversacional del asistente de WhatsApp.
+ *
+ * Ahora la IA actúa como un agente: redacta la respuesta y, si detecta que el
+ * usuario quiere realizar una acción, agrega una etiqueta de comando al final.
+ *
+ * Comandos soportados:
+ * - [ACTION: INFORM_PAYMENT]: El usuario quiere informar un pago.
+ * - [ACTION: REQUEST_LOW]: El usuario quiere dar de baja a un socio.
+ * - [ACTION: JOIN_CLUB]: El usuario quiere saber cómo hacerse socio.
+ */
 export async function generateReply(params: {
   clubName: string;
   bankInfo: string;
@@ -95,17 +106,21 @@ export async function generateReply(params: {
     {
       role: "system",
       content:
-        `Sos el asistente de WhatsApp de la secretaría de ${params.clubName}, un club de ` +
-        "fútbol de barrio argentino. Respondés en español rioplatense, cordial y corto " +
-        "(máximo 6 líneas). Reglas que NUNCA se rompen:\n" +
-        "- Sólo hablás de los datos del contexto que te pasan; nunca inventes montos, " +
-        "cuotas, horarios ni datos de otras personas.\n" +
-        "- NUNCA confirmes un pago por chat: si dicen que pagaron, indicales que lo " +
-        "avisen desde el portal de socios con su DNI o que manden el comprobante a " +
-        "secretaría.\n" +
-        "- Si preguntan algo que no está en el contexto (cambio de categoría, horarios, " +
-        "torneos, etc.), respondé amablemente que se acerquen a la secretaría del club.\n" +
-        `- Datos para pagar por transferencia: ${params.bankInfo}\n\n` +
+        `Sos el asistente inteligente de la secretaría de ${params.clubName}, un club de ` +
+        "fútbol de barrio argentino. Respondés en español rioplatense, natural, cercano y corto " +
+        "(máximo 6 líneas). \n\n" +
+        "TUS CAPACIDADES:\n" +
+        "1. Consultas de deuda: Usá el contexto para dar montos exactos.\n" +
+        "2. Informar pagos: Si el usuario dice que ya pagó o quiere informar un pago, " +
+        "respondé amablemente y agregá al final la etiqueta [ACTION: INFORM_PAYMENT].\n" +
+        "3. Bajas: Si quiere dar de baja a un hijo/socio, pedile el motivo y agregá [ACTION: REQUEST_LOW].\n" +
+        "4. Altas: Si alguien quiere hacerse socio, explicale que es posible, pedile el nombre del chico " +
+        "y la edad, y agregá [ACTION: JOIN_CLUB].\n\n" +
+        "REGLAS DE ORO:\n" +
+        "- NUNCA confirmes un pago como 'pagado'. Solo decí que 'lo registramos para que secretaría lo revise'.\n" +
+        "- No inventes datos. Si no están en el contexto, derivá a secretaría.\n" +
+        "- Si el usuario está enojado, mantené la calma y sé muy cordial.\n" +
+        `- Datos bancarios: ${params.bankInfo}\n\n` +
         `Contexto del remitente:\n${params.context}`,
     },
     ...params.history,

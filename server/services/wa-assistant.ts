@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import * as schema from "../../db/schema";
 import { getDb } from "../queries/connection";
 import { syncOverdueQuotas } from "../domain/quotas";
@@ -48,18 +48,13 @@ function underRateLimit(phone: string): boolean {
   return true;
 }
 
-/**
- * Los últimos 10 dígitos de un celular argentino, una vez normalizado: se
- * sacan el 54/9 del formato internacional, el 0 de prefijo y el 15 del
- * celular, igual que hace `toJid`. Así matchean "11 15 2345-6789" (base) y
- * "5491123456789" (WhatsApp).
- */
-export function lastTenDigits(phone: string): string | null {
-  let digits = phone.replace(/\D/g, "");
+/** Los últimos 10 dígitos: lo que identifica un celular argentino. */
+function lastTenDigits(phone: string): string | null {
+  let digits = phone.replace(/\\D/g, "");
   if (digits.startsWith("54")) digits = digits.slice(2);
   if (digits.startsWith("0")) digits = digits.slice(1);
   if (digits.startsWith("9") && digits.length > 10) digits = digits.slice(1);
-  digits = digits.replace(/^(\d{2,4})15(\d+)$/, "$1$2");
+  digits = digits.replace(/^(\\d{2,4})15(\\d+)$/, "$1$2");
   return digits.length >= 10 ? digits.slice(-10) : null;
 }
 
@@ -127,14 +122,14 @@ async function buildContext(
       (q) =>
         `- ${MONTH_NAMES[q.month - 1]} ${q.year} (${q.playerName}): $${q.totalAmount.toLocaleString("es-AR")}`,
     )
-    .join("\n");
+    .join("\\n");
 
   return (
-    `Socio: ${account.name} (${account.kind === "guardian" ? "tutor" : "socio sin tutor"}).\n` +
+    `Socio: ${account.name} (${account.kind === "guardian" ? "tutor" : "socio sin tutor"}).\\n` +
     (quotas.length
-      ? `Cuotas pendientes:\n${detail}\nDeuda total: $${total.toLocaleString("es-AR")} (incluye intereses).\n`
-      : "No tiene cuotas pendientes: está al día.\n") +
-    `Día de vencimiento de las cuotas: ${settings.dueDay} de cada mes.\n` +
+      ? `Cuotas pendientes:\\n${detail}\\nDeuda total: $${total.toLocaleString("es-AR")} (incluye intereses).\\n`
+      : "No tiene cuotas pendientes: está al día.\\n") +
+    `Día de vencimiento de las cuotas: ${settings.dueDay} de cada mes.\\n` +
     `Datos bancarios: ${bankInfo}.`
   );
 }
@@ -145,6 +140,45 @@ function fallbackReply(account: Account | null, settings: ClubSettings): string 
     `Hola${name}! Este es un aviso automático de *${settings.clubName}*. ` +
     "Por consultas escribinos o acercate a la secretaría del club. ¡Gracias!"
   );
+}
+
+/**
+ * Procesa las etiquetas de acción que la IA agrega al final del mensaje.
+ */
+async function processActions(account: Account | null, text: string, phone: string) {
+  const db = getDb();
+  
+  // 1. Informar Pago
+  if (text.includes("[ACTION: INFORM_PAYMENT]")) {
+    if (account) {
+      await db.insert(schema.alertLogs).values({
+        guardianId: account.kind === "guardian" ? account.id : null,
+        playerId: account.kind === "player" ? account.id : null,
+        message: `El socio informó un pago vía WhatsApp. Verificar comprobante.`,
+        status: "prepared",
+      });
+    }
+  }
+
+  // 2. Pedir Baja
+  if (text.includes("[ACTION: REQUEST_LOW]")) {
+    if (account) {
+      await db.insert(schema.alertLogs).values({
+        guardianId: account.kind === "guardian" ? account.id : null,
+        playerId: account.kind === "player" ? account.id : null,
+        message: `El socio solicitó la baja vía WhatsApp.`,
+        status: "prepared",
+      });
+    }
+  }
+
+  // 3. Consultar Alta / Nuevo Socio
+  if (text.includes("[ACTION: JOIN_CLUB]")) {
+    await db.insert(schema.alertLogs).values({
+      message: `Persona desconocida (${phone}) consultó cómo hacerse socio vía WhatsApp.`,
+      status: "prepared",
+    });
+  }
 }
 
 async function handleIncoming(msg: IncomingMessage): Promise<void> {
@@ -193,10 +227,20 @@ async function handleIncoming(msg: IncomingMessage): Promise<void> {
       reply = fallbackReply(account, settings);
     }
 
-    history.push({ role: "assistant", content: reply });
+    // Procesar acciones en segundo plano
+    void processActions(account, reply, phone);
+
+    // Limpiar etiquetas de acción para el usuario final
+    const cleanReply = reply
+      .replace(/\\[ACTION: INFORM_PAYMENT\\]/g, "")
+      .replace(/\\[ACTION: REQUEST_LOW\\]/g, "")
+      .replace(/\\[ACTION: JOIN_CLUB\\]/g, "")
+      .trim();
+
+    history.push({ role: "assistant", content: cleanReply });
     histories.set(phone, history.slice(-MAX_HISTORY));
 
-    await sendText(phone, reply);
+    await sendText(phone, cleanReply);
   } catch (err) {
     console.error("[wa-assistant] error respondiendo:", err);
   }
