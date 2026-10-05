@@ -46,3 +46,6 @@ coverage/
 
 # Servidor empaquetado para Vercel (lo genera el build)
 server-dist/*.mjs
+
+# Sesión del bot de WhatsApp (credenciales de Baileys, no versionar)
+.wa-auth/

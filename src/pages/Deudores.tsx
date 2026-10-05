@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
   Bell,
+  Bot,
   DollarSign,
   MessageCircle,
   Receipt,
+  Send,
   Users,
 } from "lucide-react";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
@@ -34,9 +36,15 @@ export default function Deudores() {
   const [onlyOverdue, setOnlyOverdue] = useState(true);
   const [selected, setSelected] = useState<{ kind: "guardian" | "player"; id: number } | null>(null);
   const [payer, setPayer] = useState<CobrarPayer | null>(null);
+  const [botOpen, setBotOpen] = useState(false);
 
   const { data, isLoading } = trpc.alert.getDebtors.useQuery({ minAmount: 0, onlyOverdue });
   const { data: logs } = trpc.alert.getLogs.useQuery({ limit: 30 });
+  // Mientras el diálogo del bot está abierto, el estado se refresca seguido
+  // para que el QR nuevo y el "conectado" aparezcan apenas cambian.
+  const { data: bot } = trpc.alert.whatsappStatus.useQuery(undefined, {
+    refetchInterval: botOpen ? 2000 : 10000,
+  });
 
   // El texto del aviso lo arma el servidor con la deuda actualizada.
   const { data: prepared } = trpc.alert.buildMessage.useQuery(
@@ -57,10 +65,21 @@ export default function Deudores() {
         title="Deudores y alertas"
         subtitle="Seguimiento de morosidad y avisos por WhatsApp"
         actions={
-          <label className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className={bot?.connected ? "border-green-200 text-green-700" : ""}
+              onClick={() => setBotOpen(true)}
+            >
+              <Bot className="mr-1 h-4 w-4" />
+              {bot?.connected ? `Bot +${bot.phone ?? ""}` : "Conectar bot"}
+            </Button>
+            <label className="flex items-center gap-2 text-sm text-gray-600">
             <Switch checked={onlyOverdue} onCheckedChange={setOnlyOverdue} />
             Sólo cuotas vencidas
           </label>
+          </div>
         }
       />
 
@@ -243,7 +262,115 @@ export default function Deudores() {
         open={payer !== null}
         onOpenChange={(open) => !open && setPayer(null)}
       />
+
+      <BotDialog open={botOpen} onOpenChange={setBotOpen} />
     </div>
+  );
+}
+
+/**
+ * Vinculación del bot de WhatsApp del club. El QR lo provee el servidor
+ * (Baileys) y acá se convierte a imagen con la librería `qrcode`.
+ */
+function BotDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const [qrImage, setQrImage] = useState<string | null>(null);
+  const utils = trpc.useUtils();
+  const { data: bot } = trpc.alert.whatsappStatus.useQuery(undefined, {
+    enabled: open,
+    refetchInterval: open ? 2000 : false,
+  });
+
+  const connect = trpc.alert.whatsappConnect.useMutation({
+    onSuccess: () => utils.alert.whatsappStatus.invalidate(),
+  });
+
+  // Al abrir el diálogo, el bot arranca solo: el QR aparece a los segundos sin
+  // tener que tocar nada. El ref evita volver a dispararlo en cada refresco.
+  const connectTried = useRef(false);
+  useEffect(() => {
+    if (!open || connectTried.current || !bot || bot.connected || bot.qr) return;
+    connectTried.current = true;
+    connect.mutate();
+  }, [open, bot, connect]);
+  const disconnect = trpc.alert.whatsappDisconnect.useMutation({
+    onSuccess: () => {
+      utils.alert.whatsappStatus.invalidate();
+      // Al desvincular, la próxima apertura vuelve a pedir el QR sola.
+      connectTried.current = false;
+    },
+  });
+
+  useEffect(() => {
+    if (!bot?.qr) {
+      setQrImage(null);
+      return;
+    }
+    // Renderizar el QR en el navegador evita mandarlo en claro como imagen.
+    import("qrcode").then((qrcode) =>
+      qrcode.toDataURL(bot.qr!, { margin: 1, width: 256 }).then(setQrImage),
+    );
+  }, [bot?.qr]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Bot de WhatsApp</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          {bot?.connected ? (
+            <>
+              <p className="rounded-lg bg-green-50 p-3 text-green-800">
+                Conectado como <strong>+{bot.phone}</strong>. Los avisos se envían solos con el
+                botón <Send className="inline h-3.5 w-3.5" /> de cada deudor
+                {bot.aiEnabled ? " y el texto lo redacta la IA" : ""}.
+              </p>
+              {!bot.aiEnabled && (
+                <p className="rounded-lg bg-amber-50 p-3 text-amber-800">
+                  Sin <code>GROQ_API_KEY</code> el texto sale de la plantilla fija.
+                </p>
+              )}
+            </>
+          ) : qrImage ? (
+            <>
+              <p className="text-gray-600">
+                Escaneá este código desde el WhatsApp del club (Dispositivos vinculados):
+              </p>
+              <img src={qrImage} alt="QR de WhatsApp" className="mx-auto rounded border" />
+              <p className="text-xs text-gray-400">
+                El código se renueva solo cada ~30 segundos.
+              </p>
+            </>
+          ) : (
+            <p className="py-6 text-center text-gray-400">
+              {connect.isPending ? "Pidiendo el QR…" : "Pulsa conectar para obtener el QR."}
+            </p>
+          )}
+          {bot?.lastError && (
+            <p className="rounded-lg bg-red-50 p-3 text-red-700">{bot.lastError}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            {bot?.connected ? (
+              <Button
+                variant="outline"
+                onClick={() => disconnect.mutate()}
+                disabled={disconnect.isPending}
+              >
+                Desvincular
+              </Button>
+            ) : (
+              <Button
+                onClick={() => connect.mutate()}
+                disabled={connect.isPending}
+                className="bg-green-600 text-white hover:bg-green-700"
+              >
+                Conectar
+              </Button>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -271,6 +398,17 @@ function AlertComposer({
       utils.alert.getLogs.invalidate();
       utils.alert.getDebtors.invalidate();
     },
+  });
+
+  const { data: bot } = trpc.alert.whatsappStatus.useQuery();
+  const sendAlert = trpc.alert.sendAlert.useMutation({
+    onSuccess: () => {
+      utils.alert.getLogs.invalidate();
+      utils.alert.getDebtors.invalidate();
+      toast.success("Aviso enviado por WhatsApp");
+      onDone();
+    },
+    onError: (err) => toast.error(err.message),
   });
 
   const send = () => {
@@ -319,12 +457,19 @@ function AlertComposer({
         <Button variant="outline" onClick={onDone}>
           Cancelar
         </Button>
+        <Button variant="outline" disabled={!prepared.phone} onClick={send}>
+          <MessageCircle className="mr-1 h-4 w-4" /> Abrir WhatsApp
+        </Button>
         <Button
           className="bg-green-600 text-white hover:bg-green-700"
-          disabled={!prepared.phone}
-          onClick={send}
+          disabled={!prepared.phone || !bot?.connected || sendAlert.isPending}
+          title={bot?.connected ? "Lo manda el bot del club" : "Primero conectá el bot"}
+          onClick={() =>
+            sendAlert.mutate({ kind: target.kind, id: target.id, customMessage: message })
+          }
         >
-          <MessageCircle className="mr-1 h-4 w-4" /> Abrir WhatsApp
+          <Send className="mr-1 h-4 w-4" />
+          {sendAlert.isPending ? "Enviando…" : "Enviar automático"}
         </Button>
       </div>
     </div>

@@ -6,6 +6,8 @@ import { getDb } from "../queries/connection";
 import { MONTH_NAMES } from "../../contracts/constants";
 import { syncOverdueQuotas } from "../domain/quotas";
 import { getSettings } from "../domain/settings";
+import { aiIsConfigured, generateDebtMessage } from "../lib/ai-message";
+import { adminProcedure } from "../middleware";
 
 /**
  * Deudores y avisos por WhatsApp.
@@ -45,6 +47,88 @@ export function buildWhatsAppMessage(params: {
     "Podés pagar en secretaría o desde el portal de socios.",
     "¡Gracias!",
   ].join("\n");
+}
+
+/**
+ * Carga la deuda de una cuenta y arma el mensaje (IA si está configurada,
+ * plantilla si no). Es la pieza común entre el envío asistido (`buildMessage`)
+ * y el automático (`sendAlert`).
+ */
+async function loadAlert(
+  db: ReturnType<typeof getDb>,
+  input: { kind: "guardian" | "player"; id: number; customMessage?: string },
+) {
+  await syncOverdueQuotas(db);
+  const settings = await getSettings(db);
+
+  const account =
+    input.kind === "guardian"
+      ? (
+          await db
+            .select({ name: schema.guardians.name, phone: schema.guardians.phone })
+            .from(schema.guardians)
+            .where(eq(schema.guardians.id, input.id))
+            .limit(1)
+        )[0]
+      : (
+          await db
+            .select({ name: schema.players.name, phone: schema.players.phone })
+            .from(schema.players)
+            .where(eq(schema.players.id, input.id))
+            .limit(1)
+        )[0];
+
+  if (!account) return null;
+
+  const quotas = await db
+    .select({
+      id: schema.quotas.id,
+      month: schema.quotas.month,
+      year: schema.quotas.year,
+      totalAmount: schema.quotas.totalAmount,
+    })
+    .from(schema.quotas)
+    .innerJoin(schema.players, eq(schema.quotas.playerId, schema.players.id))
+    .where(
+      and(
+        input.kind === "guardian"
+          ? eq(schema.players.guardianId, input.id)
+          : eq(schema.players.id, input.id),
+        inArray(schema.quotas.status, ["pending", "overdue"]),
+      ),
+    )
+    .orderBy(schema.quotas.year, schema.quotas.month);
+
+  const totalDebt = quotas.reduce((sum, q) => sum + q.totalAmount, 0);
+
+  const aiMessage =
+    input.customMessage === undefined
+      ? await generateDebtMessage({
+          clubName: settings.clubName,
+          name: account.name,
+          quotas: quotas.map((q) => ({ ...q, monthName: MONTH_NAMES[q.month - 1] })),
+          totalDebt,
+        })
+      : null;
+
+  const message =
+    input.customMessage ??
+    aiMessage ??
+    buildWhatsAppMessage({
+      clubName: settings.clubName,
+      name: account.name,
+      quotas,
+      totalDebt,
+    });
+
+  return {
+    name: account.name,
+    // WhatsApp espera el número sin espacios ni símbolos.
+    phone: (account.phone ?? "").replace(/\D/g, "") || null,
+    message,
+    quotaIds: quotas.map((q) => q.id),
+    totalDebt,
+  };
 }
 
 export const alertRouter = createRouter({
@@ -202,68 +286,13 @@ export const alertRouter = createRouter({
       }),
     )
     .query(async ({ input }) => {
-      const db = getDb();
-      await syncOverdueQuotas(db);
-      const settings = await getSettings(db);
-
-      const account =
-        input.kind === "guardian"
-          ? (
-              await db
-                .select({ name: schema.guardians.name, phone: schema.guardians.phone })
-                .from(schema.guardians)
-                .where(eq(schema.guardians.id, input.id))
-                .limit(1)
-            )[0]
-          : (
-              await db
-                .select({ name: schema.players.name, phone: schema.players.phone })
-                .from(schema.players)
-                .where(eq(schema.players.id, input.id))
-                .limit(1)
-            )[0];
-
-      if (!account) return null;
-
-      const quotas = await db
-        .select({
-          id: schema.quotas.id,
-          month: schema.quotas.month,
-          year: schema.quotas.year,
-          totalAmount: schema.quotas.totalAmount,
-        })
-        .from(schema.quotas)
-        .innerJoin(schema.players, eq(schema.quotas.playerId, schema.players.id))
-        .where(
-          and(
-            input.kind === "guardian"
-              ? eq(schema.players.guardianId, input.id)
-              : eq(schema.players.id, input.id),
-            inArray(schema.quotas.status, ["pending", "overdue"]),
-          ),
-        )
-        .orderBy(schema.quotas.year, schema.quotas.month);
-
-      const totalDebt = quotas.reduce((sum, q) => sum + q.totalAmount, 0);
-      const message =
-        input.customMessage ??
-        buildWhatsAppMessage({
-          clubName: settings.clubName,
-          name: account.name,
-          quotas,
-          totalDebt,
-        });
-
-      // WhatsApp espera el número sin espacios ni símbolos.
-      const phone = (account.phone ?? "").replace(/\D/g, "");
-
+      const alert = await loadAlert(getDb(), { ...input, customMessage: input.customMessage });
+      if (!alert) return null;
       return {
-        name: account.name,
-        phone: phone || null,
-        message,
-        quotaIds: quotas.map((q) => q.id),
-        totalDebt,
-        whatsappUrl: phone ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : null,
+        ...alert,
+        whatsappUrl: alert.phone
+          ? `https://wa.me/${alert.phone}?text=${encodeURIComponent(alert.message)}`
+          : null,
       };
     }),
 
@@ -294,6 +323,65 @@ export const alertRouter = createRouter({
           status: input.status,
         });
       return { success: true };
+    }),
+
+  /**
+   * Estado del bot de WhatsApp propio y su vinculación.
+   *
+   * El bot vive en `server/services/whatsapp.ts` y se importa lazy: si nadie lo
+   * usa, el servidor no lo carga y la app sigue andando en serverless (donde
+   * un socket persistente como el de WhatsApp no tiene sentido).
+   *
+   * Vincular/desvincular el número del club lo hace sólo el admin.
+   */
+  whatsappStatus: staffProcedure.query(async () => {
+    const wa = await import("../services/whatsapp");
+    const status = wa.getStatus();
+    return { ...status, qr: status.connected ? null : status.qr, aiEnabled: aiIsConfigured() };
+  }),
+
+  whatsappConnect: adminProcedure.mutation(async () => {
+    const wa = await import("../services/whatsapp");
+    await wa.connect();
+    return { success: true };
+  }),
+
+  whatsappDisconnect: adminProcedure.mutation(async () => {
+    const wa = await import("../services/whatsapp");
+    await wa.disconnect();
+    return { success: true };
+  }),
+
+  /**
+   * Envío automático: el bot del club manda el aviso sin intervención humana.
+   * El aviso queda registrado como `sent` porque esta vez sí salió.
+   */
+  sendAlert: staffProcedure
+    .input(
+      z.object({
+        kind: z.enum(["guardian", "player"]),
+        id: z.number().int().positive(),
+        customMessage: z.string().trim().max(1000).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const db = getDb();
+      const alert = await loadAlert(db, { ...input, customMessage: input.customMessage });
+      if (!alert) throw new Error("No se encontró la cuenta del deudor.");
+      if (!alert.phone) throw new Error("Esta persona no tiene teléfono cargado.");
+
+      const wa = await import("../services/whatsapp");
+      await wa.sendText(alert.phone, alert.message);
+
+      await db.insert(schema.alertLogs).values({
+        guardianId: input.kind === "guardian" ? input.id : null,
+        playerId: input.kind === "player" ? input.id : null,
+        quotaIds: JSON.stringify(alert.quotaIds),
+        message: alert.message,
+        status: "sent",
+      });
+
+      return { success: true, message: alert.message };
     }),
 
   getLogs: staffProcedure

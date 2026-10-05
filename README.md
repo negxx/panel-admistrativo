@@ -375,6 +375,29 @@ corresponde contablemente.
 
 ---
 
+### Bot de WhatsApp con IA
+
+Desde **Deudores** se puede vincular un número de WhatsApp del club escaneando
+un QR (botón "Conectar bot"). Una vez vinculado, cada aviso tiene el botón
+**Enviar automático**: el mensaje sale solo desde ese número y queda registrado
+como enviado.
+
+- El texto lo redacta una IA de **Groq** (capa gratuita, sin tarjeta — cargar
+  `GROQ_API_KEY` en `.env`). Sin la clave se usa la plantilla fija.
+- **Además responde consultas.** Si un socio le escribe al número del club, el
+  asistente lo identifica por su teléfono y contesta con sus datos reales
+  (deuda, cuotas, cómo pagar). Reglas que nunca rompe: no inventa datos, no
+  muestra información de otros socios y **nunca confirma un pago por chat** — eso
+  sigue pasando por el panel o el portal. Hay límite de 5 respuestas por número
+  cada 10 minutos contra el spam.
+- Usa [Baileys](https://baileys.wiki/docs), que automatiza un WhatsApp común,
+  como WhatsApp Web. **No es la API oficial de Meta**: es gratis y no pide
+  plantillas aprobadas, pero viola los términos de servicio de WhatsApp y el
+  número podría ser bloqueado. Conviene usar un número secundario del club.
+- Sólo funciona con la app corriendo en un proceso persistente (`npm run dev`,
+  `npm start`, un servidor propio). En Vercel el bot no existe (serverless no
+  sostiene el socket) y no se carga.
+
 ## Pendiente
 
 ### Cobro online de verdad
