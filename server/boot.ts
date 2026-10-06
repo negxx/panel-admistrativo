@@ -26,6 +26,7 @@ const app = new Hono();
 // techo irreal y además un vector de abuso.
 app.use(bodyLimit({ maxSize: 5 * 1024 * 1024 }));
 
+app.get("/health", (c) => c.text("ok"));
 app.get(Paths.oauthCallback, createOAuthCallbackHandler());
 
 app.use("/api/trpc/*", (c) =>
