@@ -15,6 +15,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/contracts ./contracts
 COPY --from=builder /app/db ./db
+COPY --from=builder /app/scripts ./scripts
 
 # El bot guarda la sesión en esta carpeta
 RUN mkdir -p .wa-auth
