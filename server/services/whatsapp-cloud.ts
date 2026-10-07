@@ -45,8 +45,12 @@ export async function sendCloudText(rawPhone: string, text: string): Promise<boo
 
   // Limpiar el teléfono para dejar solo dígitos
   let cleanPhone = rawPhone.replace(/\D/g, "");
-  // Si no tiene código de país argentino y tiene 10 dígitos, agregamos 54
-  if (cleanPhone.length === 10) cleanPhone = `54${cleanPhone}`;
+  // En Argentina: si viene con 549 (13 dígitos), Meta Cloud API requiere sacarle el 9: 54 + código de área + número
+  if (cleanPhone.startsWith("549") && cleanPhone.length === 13) {
+    cleanPhone = `54${cleanPhone.slice(3)}`;
+  } else if (cleanPhone.length === 10) {
+    cleanPhone = `54${cleanPhone}`;
+  }
 
   const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
 
