@@ -6,6 +6,8 @@ import { createContext } from "./context";
 import { createOAuthCallbackHandler } from "./kimi/auth";
 import { Paths } from "../contracts/constants";
 import { runMaintenance } from "./domain/maintenance";
+import { verifyWebhook, extractIncomingMessages, sendCloudText } from "./services/whatsapp-cloud";
+import { handleMessageFromPhone } from "./services/wa-assistant";
 
 /**
  * La aplicación Hono.
@@ -27,6 +29,41 @@ const app = new Hono();
 app.use(bodyLimit({ maxSize: 5 * 1024 * 1024 }));
 
 app.get("/health", (c) => c.text("ok"));
+
+/**
+ * Webhook oficial de WhatsApp Cloud API (Meta).
+ */
+app.get("/api/webhook/whatsapp", (c) => {
+  const mode = c.req.query("hub.mode");
+  const token = c.req.query("hub.verify_token");
+  const challenge = c.req.query("hub.challenge");
+
+  const verified = verifyWebhook(mode, token, challenge);
+  if (verified) {
+    return c.text(verified, 200);
+  }
+  return c.text("Forbidden", 403);
+});
+
+app.post("/api/webhook/whatsapp", async (c) => {
+  try {
+    const body = await c.req.json();
+    const messages = extractIncomingMessages(body);
+
+    for (const msg of messages) {
+      const reply = await handleMessageFromPhone(msg.phone, msg.text);
+      if (reply) {
+        await sendCloudText(msg.phone, reply);
+      }
+    }
+
+    return c.text("EVENT_RECEIVED", 200);
+  } catch (err) {
+    console.error("[webhook-whatsapp] Error procesando mensaje:", err);
+    return c.text("EVENT_RECEIVED", 200);
+  }
+});
+
 app.get(Paths.oauthCallback, createOAuthCallbackHandler());
 
 app.use("/api/trpc/*", (c) =>

@@ -181,9 +181,8 @@ async function processActions(account: Account | null, text: string, phone: stri
   }
 }
 
-async function handleIncoming(msg: IncomingMessage): Promise<void> {
-  const phone = msg.jid.split("@")[0];
-  if (!underRateLimit(phone)) return;
+export async function handleMessageFromPhone(phone: string, text: string): Promise<string | null> {
+  if (!underRateLimit(phone)) return null;
 
   try {
     const db = getDb();
@@ -207,7 +206,7 @@ async function handleIncoming(msg: IncomingMessage): Promise<void> {
     );
 
     const history = histories.get(phone) ?? [];
-    history.push({ role: "user", content: msg.text });
+    history.push({ role: "user", content: text });
 
     let reply: string;
     if (aiIsConfigured()) {
@@ -221,7 +220,7 @@ async function handleIncoming(msg: IncomingMessage): Promise<void> {
           bankInfo,
           context,
           history: history.slice(-MAX_HISTORY),
-          userText: msg.text,
+          userText: text,
         })) ?? fallbackReply(account, settings);
     } else {
       reply = fallbackReply(account, settings);
@@ -232,17 +231,26 @@ async function handleIncoming(msg: IncomingMessage): Promise<void> {
 
     // Limpiar etiquetas de acción para el usuario final
     const cleanReply = reply
-      .replace(/\\[ACTION: INFORM_PAYMENT\\]/g, "")
-      .replace(/\\[ACTION: REQUEST_LOW\\]/g, "")
-      .replace(/\\[ACTION: JOIN_CLUB\\]/g, "")
+      .replace(/\[ACTION: INFORM_PAYMENT\]/g, "")
+      .replace(/\[ACTION: REQUEST_LOW\]/g, "")
+      .replace(/\[ACTION: JOIN_CLUB\]/g, "")
       .trim();
 
     history.push({ role: "assistant", content: cleanReply });
     histories.set(phone, history.slice(-MAX_HISTORY));
 
-    await sendText(phone, cleanReply);
+    return cleanReply;
   } catch (err) {
     console.error("[wa-assistant] error respondiendo:", err);
+    return null;
+  }
+}
+
+async function handleIncoming(msg: IncomingMessage): Promise<void> {
+  const phone = msg.jid.split("@")[0];
+  const reply = await handleMessageFromPhone(phone, msg.text);
+  if (reply) {
+    await sendText(phone, reply);
   }
 }
 
@@ -252,3 +260,4 @@ export function armAssistant(): void {
     void handleIncoming(msg);
   });
 }
+
