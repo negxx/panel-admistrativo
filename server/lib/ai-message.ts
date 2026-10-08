@@ -10,7 +10,7 @@
  */
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+const MODEL = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
 
 async function chat(messages: Array<{ role: string; content: string }>): Promise<string | null> {
   const apiKey = process.env.GROQ_API_KEY;
@@ -32,12 +32,17 @@ async function chat(messages: Array<{ role: string; content: string }>): Promise
       signal: AbortSignal.timeout(15_000),
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const err = await response.text();
+      console.error("[ai-message] Error de Groq:", err);
+      return null;
+    }
     const data = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
     return data.choices?.[0]?.message?.content?.trim() || null;
-  } catch {
+  } catch (err) {
+    console.error("[ai-message] Excepción al llamar a Groq:", err);
     return null;
   }
 }
