@@ -50,11 +50,11 @@ function underRateLimit(phone: string): boolean {
 
 /** Los últimos 10 dígitos: lo que identifica un celular argentino. */
 function lastTenDigits(phone: string): string | null {
-  let digits = phone.replace(/\\D/g, "");
+  let digits = phone.replace(/\D/g, "");
   if (digits.startsWith("54")) digits = digits.slice(2);
   if (digits.startsWith("0")) digits = digits.slice(1);
   if (digits.startsWith("9") && digits.length > 10) digits = digits.slice(1);
-  digits = digits.replace(/^(\\d{2,4})15(\\d+)$/, "$1$2");
+  digits = digits.replace(/^(\d{2,4})15(\d+)$/, "$1$2");
   return digits.length >= 10 ? digits.slice(-10) : null;
 }
 
@@ -204,6 +204,8 @@ export async function handleMessageFromPhone(phone: string, text: string): Promi
       ],
       phone,
     );
+
+    console.log(`[wa-assistant] Teléfono ${phone} → ${account ? `${account.kind} "${account.name}" (id=${account.id})` : "NO REGISTRADO"}`);
 
     const history = histories.get(phone) ?? [];
     history.push({ role: "user", content: text });

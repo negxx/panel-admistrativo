@@ -50,10 +50,17 @@ app.post("/api/webhook/whatsapp", async (c) => {
     const body = await c.req.json();
     const messages = extractIncomingMessages(body);
 
+    console.log(`[webhook] Recibido POST con ${messages.length} mensaje(s)`);
+
     for (const msg of messages) {
+      console.log(`[webhook] Mensaje de ${msg.phone}: "${msg.text}"`);
       const reply = await handleMessageFromPhone(msg.phone, msg.text);
       if (reply) {
-        await sendCloudText(msg.phone, reply);
+        console.log(`[webhook] Respuesta para ${msg.phone}: "${reply.slice(0, 80)}..."`);
+        const sent = await sendCloudText(msg.phone, reply);
+        console.log(`[webhook] Envío a ${msg.phone}: ${sent ? "OK" : "FALLÓ"}`);
+      } else {
+        console.log(`[webhook] Sin respuesta para ${msg.phone} (rate-limit o error)`);
       }
     }
 
