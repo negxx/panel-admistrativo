@@ -308,6 +308,13 @@ export const quotaRouter = createRouter({
         bankCbu: z.string().trim().max(40),
         bankAlias: z.string().trim().max(40),
         bankHolder: z.string().trim().max(80),
+        // Logo como data URL ya comprimida por el cliente (canvas ≤ 512 px).
+        logoUrl: z
+          .string()
+          .max(300_000, "El logo es muy grande")
+          .refine((v) => v === "" || v.startsWith("data:image/"), "Formato de logo inválido"),
+        clubPrimaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color inválido"),
+        clubAccentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color inválido"),
       }),
     )
     .mutation(async ({ input }) => {

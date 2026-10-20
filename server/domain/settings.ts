@@ -24,6 +24,16 @@ export type ClubSettings = {
   bankHolder: string;
   /** Nombre del club, usado en mensajes y recibos. */
   clubName: string;
+  /**
+   * Logo del club como data URL (`data:image/...`). El cliente lo achica con
+   * canvas antes de mandarlo, así que pesa poco y no hace falta un bucket.
+   * Vacío = se usa el escudo genérico.
+   */
+  logoUrl: string;
+  /** Color principal del club (hex): viste el portal y los fondos de marca. */
+  clubPrimaryColor: string;
+  /** Color de acento (hex): botones y detalles en el portal. */
+  clubAccentColor: string;
 };
 
 export const DEFAULT_SETTINGS: ClubSettings = {
@@ -37,7 +47,14 @@ export const DEFAULT_SETTINGS: ClubSettings = {
   bankAlias: "",
   bankHolder: "",
   clubName: "Club Atlético",
+  logoUrl: "",
+  clubPrimaryColor: "#0d1642",
+  clubAccentColor: "#ffc107",
 };
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+/** Un logo como data URL no debería pasar de ~200 KB reales. */
+const MAX_LOGO_CHARS = 300_000;
 
 /** Lee toda la configuración, completando con los valores por defecto. */
 export async function getSettings(db: DbClient): Promise<ClubSettings> {
@@ -61,6 +78,18 @@ export async function getSettings(db: DbClient): Promise<ClubSettings> {
     bankAlias: str("bankAlias", DEFAULT_SETTINGS.bankAlias),
     bankHolder: str("bankHolder", DEFAULT_SETTINGS.bankHolder),
     clubName: str("clubName", DEFAULT_SETTINGS.clubName),
+    // El logo y los colores se validan: si alguien guardó basura a mano en la
+    // tabla, el portal cae al escudo y a los colores por defecto.
+    logoUrl: (map.get("logoUrl") ?? "").startsWith("data:image/") &&
+      map.get("logoUrl")!.length <= MAX_LOGO_CHARS
+      ? map.get("logoUrl")!
+      : DEFAULT_SETTINGS.logoUrl,
+    clubPrimaryColor: HEX_RE.test(map.get("clubPrimaryColor") ?? "")
+      ? map.get("clubPrimaryColor")!
+      : DEFAULT_SETTINGS.clubPrimaryColor,
+    clubAccentColor: HEX_RE.test(map.get("clubAccentColor") ?? "")
+      ? map.get("clubAccentColor")!
+      : DEFAULT_SETTINGS.clubAccentColor,
   };
 }
 
@@ -78,11 +107,17 @@ export async function saveSettings(db: DbClient, values: Partial<ClubSettings>):
   }
 }
 
-/** Sólo los datos bancarios: es lo único de `settings` que ve el portal público. */
+/**
+ * Lo que el portal ve sin identificarse: identidad del club (nombre, logo,
+ * colores) más los datos bancarios para avisar transferencias.
+ */
 export async function getPublicBankInfo(db: DbClient) {
   const s = await getSettings(db);
   return {
     clubName: s.clubName,
+    logoUrl: s.logoUrl,
+    primaryColor: s.clubPrimaryColor,
+    accentColor: s.clubAccentColor,
     bankName: s.bankName,
     bankCbu: s.bankCbu,
     bankAlias: s.bankAlias,

@@ -79,37 +79,53 @@ export default function PortalLogin() {
   };
 
   return (
-    <div className="flex min-h-[60vh] items-center justify-center">
-      <Card className="w-full max-w-sm border-0 bg-white/95 shadow-2xl backdrop-blur">
+    <div className="flex min-h-[60vh] animate-fade-in items-center justify-center">
+      <Card className="w-full max-w-sm animate-fade-in-up rounded-2xl border-white/10 bg-white/[0.06] shadow-pop backdrop-blur-md">
         <CardHeader className="pb-4 text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#1a237e] to-[#283593] shadow-lg">
-            <Shield className="h-7 w-7 text-[#ffc107]" />
+          <div
+            className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl"
+            style={{
+              background: `linear-gradient(135deg, var(--club-accent-light), var(--club-accent))`,
+              boxShadow: `0 4px 16px -4px var(--club-accent-glow)`,
+            }}
+          >
+            <Shield className="h-7 w-7" strokeWidth={2.4} style={{ color: "var(--club-accent-contrast)" }} />
           </div>
-          <CardTitle className="text-xl text-[#1a237e]">Portal de socios</CardTitle>
-          <p className="mt-1 text-sm text-gray-500">Consultá y pagá tus cuotas</p>
+          <CardTitle className="text-xl font-bold tracking-tight text-white">
+            Accedé al portal
+          </CardTitle>
+          <p className="mt-1 text-sm text-white/60">
+            Ingresá con tu DNI. La primera vez te pedimos la fecha de nacimiento del socio para
+            activar tu PIN; después, entrás solo con el PIN.
+          </p>
         </CardHeader>
 
         <CardContent className="space-y-4">
           {step === "dni" && (
             <>
               <div className="space-y-2">
-                <Label className="text-gray-700">DNI del socio o del tutor</Label>
+                <Label className="text-white/70">DNI del socio o del tutor</Label>
                 <Input
                   inputMode="numeric"
                   placeholder="Sin puntos"
                   value={dni}
                   onChange={(e) => setDni(onlyDigits(e.target.value))}
                   onKeyDown={(e) => e.key === "Enter" && dni.length >= 6 && lookup.mutate({ dni })}
-                  className="h-11"
+                  className="h-11 rounded-xl border-white/15 bg-white/[0.07] px-4 text-white placeholder:text-white/40 focus-visible:border-[var(--club-accent)] focus-visible:bg-white/10 focus-visible:ring-[var(--club-accent-glow)]"
                   autoFocus
                 />
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-white/50">
                   Si sos padre, madre o tutor, ingresá tu DNI: vas a ver las cuotas de todos tus
                   hijos.
                 </p>
               </div>
               <Button
-                className="h-11 w-full bg-gradient-to-r from-[#1a237e] to-[#283593] text-white hover:from-[#283593] hover:to-[#3949ab]"
+                className="h-11 w-full rounded-xl font-semibold transition-all hover:opacity-90"
+                style={{
+                  background: `linear-gradient(90deg, var(--club-accent-light), var(--club-accent))`,
+                  color: "var(--club-accent-contrast)",
+                  boxShadow: `0 4px 16px -4px var(--club-accent-glow)`,
+                }}
                 onClick={() => lookup.mutate({ dni })}
                 disabled={dni.length < 6 || lookup.isPending}
               >
@@ -127,7 +143,7 @@ export default function PortalLogin() {
           {step === "pin" && (
             <>
               <div className="space-y-2">
-                <Label className="text-gray-700">Tu PIN de 4 dígitos</Label>
+                <Label className="text-white/70">Tu PIN de 4 dígitos</Label>
                 <Input
                   type="password"
                   inputMode="numeric"
@@ -138,12 +154,17 @@ export default function PortalLogin() {
                   onKeyDown={(e) =>
                     e.key === "Enter" && pin.length === 4 && login.mutate({ dni, pin })
                   }
-                  className="h-11 text-center text-2xl tracking-widest"
+                  className="h-11 rounded-xl border-white/15 bg-white/[0.07] text-center text-2xl tracking-widest text-white placeholder:text-white/40 focus-visible:border-[var(--club-accent)] focus-visible:bg-white/10 focus-visible:ring-[var(--club-accent-glow)]"
                   autoFocus
                 />
               </div>
               <Button
-                className="h-11 w-full bg-gradient-to-r from-[#1a237e] to-[#283593] text-white hover:from-[#283593] hover:to-[#3949ab]"
+                className="h-11 w-full rounded-xl font-semibold transition-all hover:opacity-90"
+                style={{
+                  background: `linear-gradient(90deg, var(--club-accent-light), var(--club-accent))`,
+                  color: "var(--club-accent-contrast)",
+                  boxShadow: `0 4px 16px -4px var(--club-accent-glow)`,
+                }}
                 onClick={() => login.mutate({ dni, pin })}
                 disabled={pin.length !== 4 || login.isPending}
               >
@@ -155,7 +176,7 @@ export default function PortalLogin() {
                   </>
                 )}
               </Button>
-              <p className="text-center text-xs text-gray-400">
+              <p className="text-center text-xs text-white/50">
                 ¿Olvidaste tu PIN? Pedí en secretaría que te lo blanqueen.
               </p>
             </>
@@ -163,24 +184,24 @@ export default function PortalLogin() {
 
           {step === "activate" && (
             <>
-              <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800">
+              <p className="rounded-xl border border-white/10 bg-white/10 p-3 text-sm text-white/70">
                 Es tu primer ingreso. Para confirmar que sos vos, ingresá la fecha de nacimiento del
                 socio y elegí un PIN.
               </p>
               <div className="space-y-2">
-                <Label className="text-gray-700">Fecha de nacimiento del socio</Label>
+                <Label className="text-white/70">Fecha de nacimiento del socio</Label>
                 <Input
                   type="date"
                   value={birthDate}
                   onChange={(e) => setBirthDate(e.target.value)}
-                  className="h-11"
+                  className="h-11 rounded-xl border-white/15 bg-white/[0.07] px-4 text-white placeholder:text-white/40 focus-visible:border-[var(--club-accent)] focus-visible:bg-white/10 focus-visible:ring-[var(--club-accent-glow)]"
                 />
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-white/50">
                   Si tenés varios hijos en el club, sirve la fecha de cualquiera de ellos.
                 </p>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-700">Elegí un PIN de 4 dígitos</Label>
+                <Label className="text-white/70">Elegí un PIN de 4 dígitos</Label>
                 <Input
                   type="password"
                   inputMode="numeric"
@@ -188,11 +209,11 @@ export default function PortalLogin() {
                   placeholder="••••"
                   value={pin}
                   onChange={(e) => setPin(onlyDigits(e.target.value))}
-                  className="h-11 text-center text-2xl tracking-widest"
+                  className="h-11 rounded-xl border-white/15 bg-white/[0.07] text-center text-2xl tracking-widest text-white placeholder:text-white/40 focus-visible:border-[var(--club-accent)] focus-visible:bg-white/10 focus-visible:ring-[var(--club-accent-glow)]"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-700">Repetí el PIN</Label>
+                <Label className="text-white/70">Repetí el PIN</Label>
                 <Input
                   type="password"
                   inputMode="numeric"
@@ -200,11 +221,16 @@ export default function PortalLogin() {
                   placeholder="••••"
                   value={confirmPin}
                   onChange={(e) => setConfirmPin(onlyDigits(e.target.value))}
-                  className="h-11 text-center text-2xl tracking-widest"
+                  className="h-11 rounded-xl border-white/15 bg-white/[0.07] text-center text-2xl tracking-widest text-white placeholder:text-white/40 focus-visible:border-[var(--club-accent)] focus-visible:bg-white/10 focus-visible:ring-[var(--club-accent-glow)]"
                 />
               </div>
               <Button
-                className="h-11 w-full bg-gradient-to-r from-[#1a237e] to-[#283593] text-white hover:from-[#283593] hover:to-[#3949ab]"
+                className="h-11 w-full rounded-xl font-semibold transition-all hover:opacity-90"
+                style={{
+                  background: `linear-gradient(90deg, var(--club-accent-light), var(--club-accent))`,
+                  color: "var(--club-accent-contrast)",
+                  boxShadow: `0 4px 16px -4px var(--club-accent-glow)`,
+                }}
                 onClick={handleActivate}
                 disabled={
                   pin.length !== 4 || confirmPin.length !== 4 || !birthDate || activate.isPending
@@ -219,7 +245,7 @@ export default function PortalLogin() {
             <Button
               variant="ghost"
               size="sm"
-              className="w-full text-gray-500"
+              className="w-full text-white/60 hover:bg-white/10 hover:text-white"
               onClick={() => {
                 setStep("dni");
                 setPin("");
