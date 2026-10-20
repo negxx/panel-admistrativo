@@ -32,6 +32,40 @@ export function verifyWebhook(
 }
 
 /**
+ * Formato que Meta exige para Argentina: 54 + 9 + área + número, **sin el 15**
+ * (https://faq.whatsapp.com/1294841057948784). Ojo: durante un tiempo la Cloud
+ * API pedía lo contrario (sacar el 9), por eso había código que lo recortaba;
+ * hoy enviar sin el 9 da error y el mensaje nunca sale.
+ *
+ * Acepta las cargas típicas del club:
+ *   "11 2345-6789"     → 5491123456789
+ *   "11 15 2345-6789"  → 5491123456789
+ *   "011 15 2345-6789" → 5491123456789
+ *   "5491123456789"    → 5491123456789 (ya viene bien)
+ *
+ * Los fijos (área + número de 8, sin celular) también quedan con 9: Meta los
+ * rechaza igual porque WhatsApp sólo llega a móviles. Números de otros países
+ * pasan tal cual si ya traen código de país.
+ */
+function normalizeArPhone(rawPhone: string): string {
+  let digits = rawPhone.replace(/\D/g, "");
+
+  // Quita el 0 de "011 15 2345-6789".
+  if (digits.startsWith("0")) digits = digits.slice(1);
+  // Quita el 15 del formato nacional: "111523456789" → "1123456789".
+  digits = digits.replace(/^(\d{2,4})15(\d{6,8})$/, "$1$2");
+
+  if (digits.startsWith("54")) {
+    // Con país: un celular cargado sin el 9 (5411... = 12 dígitos) lo lleva a 13.
+    if (digits.length === 12) digits = `549${digits.slice(2)}`;
+    return digits;
+  }
+
+  // Nacional de 10 dígitos (área + número de celular): agrega 54 y el 9.
+  return digits.length === 10 ? `549${digits}` : digits;
+}
+
+/**
  * Envía un mensaje de texto usando la WhatsApp Cloud API de Meta.
  */
 export async function sendCloudText(rawPhone: string, text: string): Promise<boolean> {
@@ -43,14 +77,7 @@ export async function sendCloudText(rawPhone: string, text: string): Promise<boo
     return false;
   }
 
-  // Limpiar el teléfono para dejar solo dígitos
-  let cleanPhone = rawPhone.replace(/\D/g, "");
-  // En Argentina: si viene con 549 (13 dígitos), Meta Cloud API requiere sacarle el 9: 54 + código de área + número
-  if (cleanPhone.startsWith("549") && cleanPhone.length === 13) {
-    cleanPhone = `54${cleanPhone.slice(3)}`;
-  } else if (cleanPhone.length === 10) {
-    cleanPhone = `54${cleanPhone}`;
-  }
+  const cleanPhone = normalizeArPhone(rawPhone);
 
   const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
 

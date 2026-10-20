@@ -10,7 +10,14 @@
  */
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
+/**
+ * Los modelos llama-3.3-* salieron del free tier de Groq (404). El reemplazo
+ * tiene que ser un modelo que NO gaste tokens en razonamiento: los gpt-oss-*
+ * queman la mitad del presupuesto de `max_tokens` en un campo `reasoning`
+ * aparte y el texto final sale vacío o cortado a la mitad de la frase.
+ * `qwen/qwen3.8-27b` responde directo, sin razonamiento visible.
+ */
+const MODEL = process.env.GROQ_MODEL ?? "qwen/qwen3.8-27b";
 
 async function chat(messages: Array<{ role: string; content: string }>): Promise<string | null> {
   const apiKey = process.env.GROQ_API_KEY;

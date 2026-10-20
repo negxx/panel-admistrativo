@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import * as schema from "../../db/schema";
 import { getDb } from "../queries/connection";
 import { syncOverdueQuotas } from "../domain/quotas";
@@ -21,7 +21,7 @@ import { sendText, setIncomingHandler, type IncomingMessage } from "./whatsapp";
  *   asistente no toca la base más que para leer.
  * - **Historial corto en memoria** (últimos 6 mensajes por número): suficiente
  *   para una conversación coherente, no es estado que valga la pena guardar.
- * - **Límite de 5 respuestas por número cada 10 minutos**, para que un grupo
+ * - **Límite de 20 respuestas por número cada 10 minutos**, para que un grupo
  *   travieso o un spam no queme la cuota gratis de Groq.
  * - Sin `GROQ_API_KEY` igual responde, con un texto fijo que deriva a la
  *   secretaría.
@@ -33,7 +33,12 @@ const histories = new Map<string, ChatEntry[]>();
 const replyWindows = new Map<string, number[]>();
 
 const MAX_HISTORY = 6;
-const MAX_REPLIES = 5;
+/**
+ * 5 respuestas cada 10 minutos cortaba la demo apenas quien mostraba hacía
+ * un par de preguntas seguidas (y parecía que el bot se colgaba otra vez).
+ * 20 sigue protegiendo la cuota gratis de Groq contra spam.
+ */
+const MAX_REPLIES = 20;
 const WINDOW_MS = 10 * 60 * 1000;
 
 function underRateLimit(phone: string): boolean {
@@ -122,14 +127,14 @@ async function buildContext(
       (q) =>
         `- ${MONTH_NAMES[q.month - 1]} ${q.year} (${q.playerName}): $${q.totalAmount.toLocaleString("es-AR")}`,
     )
-    .join("\\n");
+    .join("\n");
 
   return (
-    `Socio: ${account.name} (${account.kind === "guardian" ? "tutor" : "socio sin tutor"}).\\n` +
+    `Socio: ${account.name} (${account.kind === "guardian" ? "tutor" : "socio sin tutor"}).\n` +
     (quotas.length
-      ? `Cuotas pendientes:\\n${detail}\\nDeuda total: $${total.toLocaleString("es-AR")} (incluye intereses).\\n`
-      : "No tiene cuotas pendientes: está al día.\\n") +
-    `Día de vencimiento de las cuotas: ${settings.dueDay} de cada mes.\\n` +
+      ? `Cuotas pendientes:\n${detail}\nDeuda total: $${total.toLocaleString("es-AR")} (incluye intereses).\n`
+      : "No tiene cuotas pendientes: está al día.\n") +
+    `Día de vencimiento de las cuotas: ${settings.dueDay} de cada mes.\n` +
     `Datos bancarios: ${bankInfo}.`
   );
 }
@@ -144,18 +149,33 @@ function fallbackReply(account: Account | null, settings: ClubSettings): string 
 
 /**
  * Procesa las etiquetas de acción que la IA agrega al final del mensaje.
+ *
+ * `quotaIds` es `NOT NULL` en la tabla y acá no hay cuotas que asociar, así que
+ * hay que pasarle un JSON vacío: sin eso el insert falla siempre. Y como esta
+ * función corre "en segundo plano" (se la invoca con `void`), un error acá se
+ * volvería un rechazo no manejado que tira abajo todo el proceso: va envuelto
+ * en su propio try/catch.
  */
 async function processActions(account: Account | null, text: string, phone: string) {
   const db = getDb();
-  
+
+  const log = (values: {
+    guardianId: number | null;
+    playerId: number | null;
+    message: string;
+  }) =>
+    db
+      .insert(schema.alertLogs)
+      .values({ ...values, quotaIds: JSON.stringify([]), status: "prepared" })
+      .catch((err) => console.error("[wa-assistant] error registrando acción:", err));
+
   // 1. Informar Pago
   if (text.includes("[ACTION: INFORM_PAYMENT]")) {
     if (account) {
-      await db.insert(schema.alertLogs).values({
+      await log({
         guardianId: account.kind === "guardian" ? account.id : null,
         playerId: account.kind === "player" ? account.id : null,
         message: `El socio informó un pago vía WhatsApp. Verificar comprobante.`,
-        status: "prepared",
       });
     }
   }
@@ -163,20 +183,20 @@ async function processActions(account: Account | null, text: string, phone: stri
   // 2. Pedir Baja
   if (text.includes("[ACTION: REQUEST_LOW]")) {
     if (account) {
-      await db.insert(schema.alertLogs).values({
+      await log({
         guardianId: account.kind === "guardian" ? account.id : null,
         playerId: account.kind === "player" ? account.id : null,
         message: `El socio solicitó la baja vía WhatsApp.`,
-        status: "prepared",
       });
     }
   }
 
   // 3. Consultar Alta / Nuevo Socio
   if (text.includes("[ACTION: JOIN_CLUB]")) {
-    await db.insert(schema.alertLogs).values({
+    await log({
+      guardianId: null,
+      playerId: null,
       message: `Persona desconocida (${phone}) consultó cómo hacerse socio vía WhatsApp.`,
-      status: "prepared",
     });
   }
 }
