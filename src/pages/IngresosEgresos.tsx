@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ALL_FILTER } from "@contracts/constants";
-import { EmptyRow, LoadingRows, MoneyStat, PageHeader, Pagination } from "@/components/ui-kit";
+import { EmptyRow, LoadingRows, MethodLabel, MoneyStat, PageHeader, Pagination } from "@/components/ui-kit";
 import { formatDate, formatMoney, todayInput } from "@/lib/format";
 
 /**
@@ -152,7 +152,7 @@ export default function IngresosEgresos() {
   }));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in lg:space-y-6">
       <PageHeader
         title="Ingresos y egresos"
         subtitle="Movimientos del club que no son cuotas"
@@ -196,20 +196,45 @@ export default function IngresosEgresos() {
       </div>
 
       {chartData.length > 0 && (
-        <Card className="border border-gray-200">
+        <Card className="rounded-xl border-border/70 shadow-card">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Últimos 6 meses</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="mes" fontSize={12} />
-                <YAxis fontSize={12} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(value: number) => formatMoney(value)} />
-                <Legend />
-                <Bar dataKey="Ingresos" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Egresos" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <XAxis
+                  dataKey="mes"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={{ stroke: "hsl(var(--border))" }}
+                  tick={{ fill: "hsl(var(--muted-foreground))" }}
+                />
+                <YAxis
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                  tick={{ fill: "hsl(var(--muted-foreground))" }}
+                />
+                <Tooltip
+                  formatter={(value: number) => formatMoney(value)}
+                  contentStyle={{
+                    borderRadius: 12,
+                    border: "1px solid hsl(var(--border))",
+                    backgroundColor: "hsl(var(--card))",
+                    color: "hsl(var(--foreground))",
+                  }}
+                  cursor={{ fill: "hsl(var(--muted) / 0.4)" }}
+                />
+                <Legend
+                  iconType="circle"
+                  iconSize={8}
+                  wrapperStyle={{ fontSize: 12, color: "hsl(var(--muted-foreground))" }}
+                />
+                <Bar dataKey="Ingresos" fill="hsl(var(--success))" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Egresos" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -253,17 +278,17 @@ export default function IngresosEgresos() {
         </Select>
       </div>
 
-      <Card className="border border-gray-200">
+      <Card className="rounded-xl border-border/70 py-0 shadow-card overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50 text-left text-gray-600">
-                  <th className="px-4 py-3 font-semibold">Fecha</th>
-                  <th className="px-4 py-3 font-semibold">Descripción</th>
-                  <th className="px-4 py-3 font-semibold">Categoría</th>
-                  <th className="px-4 py-3 font-semibold">Medio</th>
-                  <th className="px-4 py-3 text-right font-semibold">Importe</th>
+                <tr className="border-b border-border bg-muted/50 text-left text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  <th className="px-4 py-3">Fecha</th>
+                  <th className="px-4 py-3">Descripción</th>
+                  <th className="px-4 py-3">Categoría</th>
+                  <th className="px-4 py-3">Medio</th>
+                  <th className="px-4 py-3 text-right">Importe</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -273,12 +298,15 @@ export default function IngresosEgresos() {
                   <EmptyRow colSpan={6} message="No hay movimientos en este período." />
                 )}
                 {transactions.map((movement) => (
-                  <tr key={movement.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                    <td className="px-4 py-3 text-gray-500">{formatDate(movement.date)}</td>
+                  <tr
+                    key={movement.id}
+                    className="border-b border-border/60 transition-colors hover:bg-muted/40"
+                  >
+                    <td className="px-4 py-3 text-muted-foreground">{formatDate(movement.date)}</td>
                     <td className="px-4 py-3">
                       <p className="font-medium">{movement.description}</p>
                       {movement.createdByName && (
-                        <p className="text-xs text-gray-400">Cargó {movement.createdByName}</p>
+                        <p className="text-xs text-muted-foreground">Cargó {movement.createdByName}</p>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -286,18 +314,12 @@ export default function IngresosEgresos() {
                         {movement.category}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {movement.method === "cash"
-                        ? "Efectivo"
-                        : movement.method === "transfer"
-                          ? "Transferencia"
-                          : "MercadoPago"}
+                    <td className="px-4 py-3 text-muted-foreground">
+                      <MethodLabel method={movement.method} />
                     </td>
-                    <td className="px-4 py-3 text-right font-mono font-semibold">
+                    <td className="tabular px-4 py-3 text-right font-semibold">
                       <span
-                        className={
-                          movement.type === "income" ? "text-green-600" : "text-red-600"
-                        }
+                        className={movement.type === "income" ? "text-success" : "text-destructive"}
                       >
                         {movement.type === "income" ? "+" : "−"}
                         {formatMoney(movement.amount)}
@@ -326,7 +348,7 @@ export default function IngresosEgresos() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="text-red-500"
+                          className="text-destructive hover:text-destructive"
                           onClick={() => remove.mutate({ id: movement.id })}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -357,7 +379,9 @@ export default function IngresosEgresos() {
               <Button
                 type="button"
                 variant={form.type === "income" ? "default" : "outline"}
-                className={form.type === "income" ? "bg-green-600 hover:bg-green-700" : ""}
+                className={
+                  form.type === "income" ? "bg-success text-success-foreground hover:bg-success/90" : ""
+                }
                 onClick={() => setForm({ ...form, type: "income" })}
               >
                 <TrendingUp className="mr-1 h-4 w-4" /> Ingreso
@@ -365,7 +389,11 @@ export default function IngresosEgresos() {
               <Button
                 type="button"
                 variant={form.type === "expense" ? "default" : "outline"}
-                className={form.type === "expense" ? "bg-red-600 hover:bg-red-700" : ""}
+                className={
+                  form.type === "expense"
+                    ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    : ""
+                }
                 onClick={() => setForm({ ...form, type: "expense" })}
               >
                 <TrendingDown className="mr-1 h-4 w-4" /> Egreso
@@ -431,7 +459,7 @@ export default function IngresosEgresos() {
                   <SelectItem value="mercadopago">MercadoPago</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-muted-foreground">
                 Sólo los movimientos en efectivo afectan el arqueo de caja.
               </p>
             </div>

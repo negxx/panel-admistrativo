@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { EmptyRow, PageHeader } from "@/components/ui-kit";
+import { EmptyRow, LoadingRows, PageHeader } from "@/components/ui-kit";
 import { formatDateTime } from "@/lib/format";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -92,7 +92,7 @@ export default function Usuarios() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in lg:space-y-6">
       <PageHeader
         title="Usuarios del panel"
         subtitle="Quién puede entrar al sistema y con qué permisos"
@@ -109,9 +109,9 @@ export default function Usuarios() {
         }
       />
 
-      <div className="rounded-lg bg-blue-50 p-4 text-sm text-blue-900">
+      <div className="rounded-lg border border-info/20 bg-info/10 p-4 text-sm text-info">
         <p className="font-semibold">Qué puede hacer cada rol</p>
-        <ul className="mt-1 space-y-0.5 text-blue-800">
+        <ul className="mt-1 space-y-0.5 text-info/80">
           <li>
             <strong>Administrador:</strong> todo, incluidos usuarios, categorías, configuración y
             borrado de cierres de caja.
@@ -123,34 +123,31 @@ export default function Usuarios() {
         </ul>
       </div>
 
-      <Card className="border border-gray-200">
+      <Card className="rounded-xl border-border/70 py-0 shadow-card overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50 text-left text-gray-600">
-                  <th className="px-4 py-3 font-semibold">Nombre</th>
-                  <th className="px-4 py-3 font-semibold">Usuario</th>
-                  <th className="px-4 py-3 font-semibold">Rol</th>
-                  <th className="px-4 py-3 font-semibold">Creado</th>
+                <tr className="border-b border-border bg-muted/50 text-left text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  <th className="px-4 py-3">Nombre</th>
+                  <th className="px-4 py-3">Usuario</th>
+                  <th className="px-4 py-3">Rol</th>
+                  <th className="px-4 py-3">Creado</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody>
-                {isLoading && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-gray-400">
-                      Cargando…
-                    </td>
-                  </tr>
-                )}
+                {isLoading && <LoadingRows colSpan={5} />}
                 {!isLoading && (users ?? []).length === 0 && (
                   <EmptyRow colSpan={5} message="No hay usuarios cargados." />
                 )}
                 {(users ?? []).map((user) => {
                   const isMe = currentUser?.source === "local" && currentUser.id === user.id;
                   return (
-                    <tr key={user.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                    <tr
+                      key={user.id}
+                      className="border-b border-border/60 transition-colors hover:bg-muted/40"
+                    >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{user.name}</span>
@@ -161,14 +158,14 @@ export default function Usuarios() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-mono text-gray-600">{user.username}</td>
+                      <td className="px-4 py-3 font-mono text-muted-foreground">{user.username}</td>
                       <td className="px-4 py-3">
                         <Badge
                           variant="outline"
                           className={
                             user.role === "admin"
-                              ? "gap-1 border-[#ffc107] text-[#a17800]"
-                              : "gap-1 border-gray-200 text-gray-600"
+                              ? "gap-1 border-warning/40 bg-warning/10 text-warning"
+                              : "gap-1 border-border text-muted-foreground"
                           }
                         >
                           {user.role === "admin" ? (
@@ -179,7 +176,7 @@ export default function Usuarios() {
                           {user.role === "admin" ? "Administrador" : "Secretaría"}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-400">
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
                         {formatDateTime(user.createdAt)}
                       </td>
                       <td className="px-4 py-3">
@@ -203,7 +200,7 @@ export default function Usuarios() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-red-500"
+                            className="text-destructive hover:text-destructive"
                             disabled={isMe}
                             title={isMe ? "No podés borrar tu propio usuario" : undefined}
                             onClick={() => remove.mutate({ id: user.id })}

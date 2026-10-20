@@ -131,7 +131,7 @@ export default function Cuotas() {
     summary && summary.expected > 0 ? (summary.collected / summary.expected) * 100 : 0;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:space-y-6 animate-fade-in">
       <PageHeader
         title="Cuotas y pagos"
         subtitle="Generación mensual, cobros y estado de cada socio"
@@ -167,26 +167,30 @@ export default function Cuotas() {
           amount={summary?.expected ?? 0}
           icon={<DollarSign className="h-5 w-5" />}
         />
-        <Card className="border border-gray-200">
+        <Card className="rounded-xl border-border/70 py-0 shadow-card">
           <CardContent className="p-4">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm text-gray-500">Cobrado</p>
-                <p className="font-mono text-xl font-bold text-green-600">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Cobrado
+                </p>
+                <p className="tabular mt-1 text-2xl font-bold tracking-tight text-success">
                   {formatMoney(summary?.collected ?? 0)}
                 </p>
               </div>
-              <div className="rounded-lg bg-green-50 p-2">
-                <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-success/10 text-success">
+                <CheckCircle2 className="h-5 w-5" />
               </div>
             </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100">
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-green-500 transition-all"
+                className="h-full rounded-full bg-success transition-all"
                 style={{ width: `${Math.min(100, collectionRate)}%` }}
               />
             </div>
-            <p className="mt-1 text-xs text-gray-400">{collectionRate.toFixed(0)}% del período</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {collectionRate.toFixed(0)}% del período
+            </p>
           </CardContent>
         </Card>
         <MoneyStat
@@ -199,7 +203,7 @@ export default function Cuotas() {
       </div>
 
       {/* Filtros */}
-      <div className="flex flex-col gap-3 sm:flex-row">
+      <div className="flex flex-wrap items-center gap-2">
         <Select
           value={String(month)}
           onValueChange={(v) => {
@@ -277,20 +281,20 @@ export default function Cuotas() {
         </Select>
       </div>
 
-      <Card className="border border-gray-200">
+      <Card className="overflow-hidden rounded-xl border-border/70 py-0 shadow-card">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50 text-left text-gray-600">
-                  <th className="px-3 py-3 font-semibold">Socio</th>
-                  <th className="px-3 py-3 font-semibold">Cat.</th>
-                  <th className="px-3 py-3 text-right font-semibold">Base</th>
-                  <th className="px-3 py-3 text-right font-semibold">Desc.</th>
-                  <th className="px-3 py-3 text-right font-semibold">Interés</th>
-                  <th className="px-3 py-3 text-right font-semibold">Total</th>
-                  <th className="px-3 py-3 font-semibold">Vence</th>
-                  <th className="px-3 py-3 font-semibold">Estado</th>
+                <tr className="border-b border-border bg-muted/50 text-left text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  <th className="px-3 py-3">Socio</th>
+                  <th className="px-3 py-3">Cat.</th>
+                  <th className="px-3 py-3 text-right">Base</th>
+                  <th className="px-3 py-3 text-right">Desc.</th>
+                  <th className="px-3 py-3 text-right">Interés</th>
+                  <th className="px-3 py-3 text-right">Total</th>
+                  <th className="px-3 py-3">Vence</th>
+                  <th className="px-3 py-3">Estado</th>
                   <th className="px-3 py-3" />
                 </tr>
               </thead>
@@ -303,38 +307,38 @@ export default function Cuotas() {
                   />
                 )}
                 {quotas.map((quota) => (
-                  <tr key={quota.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                  <tr key={quota.id} className="border-b border-border/60 transition-colors hover:bg-muted/40">
                     <td className="px-3 py-3">
                       <p className="font-medium">{quota.playerName}</p>
                       {quota.guardianName && (
-                        <p className="text-xs text-gray-400">Tutor: {quota.guardianName}</p>
+                        <p className="text-xs text-muted-foreground">Tutor: {quota.guardianName}</p>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-gray-500">{quota.category}</td>
-                    <td className="px-3 py-3 text-right font-mono">
+                    <td className="px-3 py-3 text-muted-foreground">{quota.category}</td>
+                    <td className="px-3 py-3 text-right tabular">
                       {formatMoney(quota.baseAmount)}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono text-gray-400">
+                    <td className="px-3 py-3 text-right tabular text-muted-foreground">
                       {quota.discountAmount > 0 ? `−${formatMoney(quota.discountAmount)}` : "—"}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono">
+                    <td className="px-3 py-3 text-right tabular">
                       {quota.interestAmount > 0 ? (
-                        <span className="text-red-600">+{formatMoney(quota.interestAmount)}</span>
+                        <span className="text-destructive">+{formatMoney(quota.interestAmount)}</span>
                       ) : (
                         "—"
                       )}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono font-semibold">
+                    <td className="px-3 py-3 text-right tabular font-semibold">
                       {formatMoney(quota.totalAmount)}
                     </td>
-                    <td className="px-3 py-3 text-gray-500">{formatDate(quota.dueDate)}</td>
+                    <td className="px-3 py-3 text-muted-foreground">{formatDate(quota.dueDate)}</td>
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap items-center gap-1">
                         <QuotaStatusBadge status={quota.status} />
                         {quota.awaitingReview && (
                           <Badge
                             variant="outline"
-                            className="gap-1 border-amber-200 text-xs text-amber-700"
+                            className="gap-1 border-warning/25 bg-warning/10 text-xs text-warning"
                           >
                             <Hourglass className="h-3 w-3" /> En revisión
                           </Badge>

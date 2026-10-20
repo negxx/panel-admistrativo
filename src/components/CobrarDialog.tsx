@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate, formatMoney, formatPeriod } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { QuotaStatusBadge } from "@/components/ui-kit";
 
 /**
@@ -104,13 +105,13 @@ function CobrarForm({
     setSelected(selected.length === quotas.length ? [] : quotas.map((q) => q.id));
 
   if (isLoading) {
-    return <p className="py-8 text-center text-sm text-gray-500">Buscando cuotas…</p>;
+    return <p className="py-8 text-center text-sm text-muted-foreground">Buscando cuotas…</p>;
   }
 
   if (quotas.length === 0) {
     return (
       <div className="space-y-4 pt-2">
-        <p className="rounded-lg bg-green-50 p-4 text-sm text-green-700">
+        <p className="rounded-lg bg-success/10 p-4 text-sm text-success">
           Esta cuenta no tiene cuotas pendientes. Está al día.
         </p>
         <div className="flex justify-end">
@@ -125,43 +126,51 @@ function CobrarForm({
   return (
     <div className="space-y-4 pt-2">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">Elegí las cuotas a cobrar</p>
-        <button type="button" onClick={selectAll} className="text-sm text-[#1a237e] hover:underline">
+        <p className="text-sm text-muted-foreground">Elegí las cuotas a cobrar</p>
+        <button type="button" onClick={selectAll} className="text-sm text-primary hover:underline">
           {selected.length === quotas.length ? "Deseleccionar todo" : "Seleccionar todo"}
         </button>
       </div>
 
       <div className="space-y-1.5">
-        {quotas.map((quota) => (
-          <label
-            key={quota.id}
-            className="flex cursor-pointer items-center gap-3 rounded bg-gray-50 px-3 py-2 text-sm"
-          >
-            <Checkbox checked={selected.includes(quota.id)} onCheckedChange={() => toggle(quota.id)} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">{quota.playerName}</p>
-              <p className="text-xs text-gray-500">
-                {formatPeriod(quota.month, quota.year)} · vence {formatDate(quota.dueDate)}
-                {quota.interestAmount > 0 && <> · interés {formatMoney(quota.interestAmount)}</>}
-              </p>
-              {quota.awaitingReview && (
-                <p className="mt-0.5 flex items-center gap-1 text-xs text-amber-700">
-                  <AlertTriangle className="h-3 w-3" />
-                  El socio ya informó un pago de esta cuota desde el portal
-                </p>
+        {quotas.map((quota) => {
+          const isSelected = selected.includes(quota.id);
+          return (
+            <label
+              key={quota.id}
+              className={cn(
+                "flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm transition-colors",
+                isSelected
+                  ? "border-primary bg-primary/10"
+                  : "border-border/70 bg-muted/40 hover:bg-muted/60",
               )}
-            </div>
-            <QuotaStatusBadge status={quota.status} />
-            <span className="w-24 text-right font-mono font-semibold">
-              {formatMoney(quota.totalAmount)}
-            </span>
-          </label>
-        ))}
+            >
+              <Checkbox checked={isSelected} onCheckedChange={() => toggle(quota.id)} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{quota.playerName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {formatPeriod(quota.month, quota.year)} · vence {formatDate(quota.dueDate)}
+                  {quota.interestAmount > 0 && <> · interés {formatMoney(quota.interestAmount)}</>}
+                </p>
+                {quota.awaitingReview && (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-warning">
+                    <AlertTriangle className="h-3 w-3" />
+                    El socio ya informó un pago de esta cuota desde el portal
+                  </p>
+                )}
+              </div>
+              <QuotaStatusBadge status={quota.status} />
+              <span className="w-24 text-right tabular font-semibold">
+                {formatMoney(quota.totalAmount)}
+              </span>
+            </label>
+          );
+        })}
       </div>
 
-      <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+      <div className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
         <span className="font-semibold">Total a cobrar</span>
-        <span className="font-mono text-xl font-bold">{formatMoney(total)}</span>
+        <span className="tabular text-2xl font-bold">{formatMoney(total)}</span>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -203,7 +212,6 @@ function CobrarForm({
           Cancelar
         </Button>
         <Button
-          className="bg-[#ffc107] text-[#1a237e] hover:bg-[#e6af06]"
           disabled={selected.length === 0 || register.isPending}
           onClick={() =>
             register.mutate({

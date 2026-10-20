@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { EmptyRow, PageHeader } from "@/components/ui-kit";
+import { EmptyRow, LoadingRows, PageHeader } from "@/components/ui-kit";
 import { formatMoney } from "@/lib/format";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -102,7 +102,7 @@ export default function Categorias() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in lg:space-y-6">
       <PageHeader
         title="Categorías"
         subtitle="Cuánto paga cada categoría del club"
@@ -116,12 +116,12 @@ export default function Categorias() {
       />
 
       {missing && missing.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <div className="flex items-start gap-2 text-sm text-amber-900">
+        <div className="space-y-2 rounded-lg border border-warning/25 bg-warning/10 p-4">
+          <div className="flex items-start gap-2 text-sm text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
             <div>
               <p className="font-semibold">Hay socios en categorías que no están cargadas</p>
-              <p className="text-amber-800">
+              <p className="text-warning/80">
                 Mientras no existan acá, el sistema no sabe cuánto cobrarles y no les genera cuota.
               </p>
             </div>
@@ -132,7 +132,7 @@ export default function Categorias() {
                 key={row.category}
                 size="sm"
                 variant="outline"
-                className="border-amber-300 bg-white"
+                className="border-warning/40 bg-card"
                 onClick={() => isAdmin && openCreate(row.category)}
                 disabled={!isAdmin}
               >
@@ -144,27 +144,21 @@ export default function Categorias() {
         </div>
       )}
 
-      <Card className="border border-gray-200">
+      <Card className="rounded-xl border-border/70 py-0 shadow-card overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50 text-left text-gray-600">
-                  <th className="px-4 py-3 font-semibold">Categoría</th>
-                  <th className="px-4 py-3 text-right font-semibold">Cuota</th>
-                  <th className="px-4 py-3 text-right font-semibold">Desc. hermanos</th>
-                  <th className="px-4 py-3 text-center font-semibold">Socios</th>
+                <tr className="border-b border-border bg-muted/50 text-left text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  <th className="px-4 py-3">Categoría</th>
+                  <th className="px-4 py-3 text-right">Cuota</th>
+                  <th className="px-4 py-3 text-right">Desc. hermanos</th>
+                  <th className="px-4 py-3 text-center">Socios</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody>
-                {isLoading && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-gray-400">
-                      Cargando…
-                    </td>
-                  </tr>
-                )}
+                {isLoading && <LoadingRows colSpan={5} />}
                 {!isLoading && (categories ?? []).length === 0 && (
                   <EmptyRow
                     colSpan={5}
@@ -172,24 +166,30 @@ export default function Categorias() {
                   />
                 )}
                 {(categories ?? []).map((category) => (
-                  <tr key={category.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                  <tr
+                    key={category.id}
+                    className="border-b border-border/60 transition-colors hover:bg-muted/40"
+                  >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{category.name}</span>
                         {!category.paysQuota && (
-                          <Badge variant="outline" className="border-gray-200 text-xs text-gray-500">
+                          <Badge
+                            variant="outline"
+                            className="border-border text-xs text-muted-foreground"
+                          >
                             No paga cuota
                           </Badge>
                         )}
                       </div>
                       {category.description && (
-                        <p className="text-xs text-gray-400">{category.description}</p>
+                        <p className="text-xs text-muted-foreground">{category.description}</p>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono">
+                    <td className="tabular px-4 py-3 text-right">
                       {category.paysQuota ? formatMoney(category.baseAmount) : "—"}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-600">
+                    <td className="px-4 py-3 text-right text-muted-foreground">
                       {category.siblingDiscountPercent > 0
                         ? `${category.siblingDiscountPercent}%`
                         : "—"}
@@ -223,7 +223,7 @@ export default function Categorias() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-red-500"
+                            className="text-destructive hover:text-destructive"
                             onClick={() => remove.mutate({ id: category.id })}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -253,16 +253,16 @@ export default function Categorias() {
                 placeholder="Ej: 2014, 5ta, Primera"
               />
               {editingId && (
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-muted-foreground">
                   Si cambiás el nombre, los socios de esta categoría se actualizan solos.
                 </p>
               )}
             </div>
 
-            <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+            <div className="flex items-center justify-between rounded-lg bg-muted p-3">
               <div>
                 <p className="text-sm font-medium">Paga cuota</p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Si está apagado, no se le generan cuotas a esta categoría.
                 </p>
               </div>
@@ -295,7 +295,7 @@ export default function Categorias() {
                     }
                     placeholder="0"
                   />
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-muted-foreground">
                     Dejalo en 0 para usar el descuento general de Configuración.
                   </p>
                 </div>

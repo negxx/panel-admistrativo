@@ -154,7 +154,7 @@ export default function Socios() {
   const players = data?.players ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="animate-fade-in space-y-4 lg:space-y-6">
       <PageHeader
         title="Socios deportivos"
         subtitle="Altas, bajas y estado de cuenta de cada socio"
@@ -171,10 +171,10 @@ export default function Socios() {
         }
       />
 
-      <Card className="border border-gray-200">
+      <Card>
         <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-9"
               placeholder="Buscar por nombre o DNI…"
@@ -223,7 +223,7 @@ export default function Socios() {
             </SelectContent>
           </Select>
 
-          <label className="flex items-center gap-2 whitespace-nowrap text-sm text-gray-600">
+          <label className="flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
             <Checkbox
               checked={onlyDebtors}
               onCheckedChange={(v) => {
@@ -236,12 +236,12 @@ export default function Socios() {
         </CardContent>
       </Card>
 
-      <Card className="border border-gray-200">
+      <Card className="rounded-xl border-border/70 py-0 shadow-card overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50 text-left text-gray-600">
+                <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-[0.06em] text-muted-foreground">
                   <th className="px-4 py-3 font-semibold">Socio</th>
                   <th className="px-4 py-3 font-semibold">Cat.</th>
                   <th className="px-4 py-3 font-semibold">Tutor</th>
@@ -256,46 +256,46 @@ export default function Socios() {
                   <EmptyRow colSpan={6} message="No hay socios que coincidan con la búsqueda." />
                 )}
                 {players.map((player) => (
-                  <tr key={player.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                  <tr key={player.id} className="border-b border-border/60 transition-colors hover:bg-muted/40">
                     <td className="px-4 py-3">
                       <p className="font-medium">{player.name}</p>
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs text-muted-foreground">
                         DNI {player.dni}
                         {ageFromBirthDate(player.birthDate) !== null && (
                           <> · {ageFromBirthDate(player.birthDate)} años</>
                         )}
                       </p>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{player.category}</td>
-                    <td className="px-4 py-3 text-gray-600">
+                    <td className="px-4 py-3 text-muted-foreground">{player.category}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
                       {player.guardianName ?? (
-                        <span className="text-xs text-gray-400">Sin tutor</span>
+                        <span className="text-xs text-muted-foreground">Sin tutor</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono">
+                    <td className="tabular px-4 py-3 text-right font-mono">
                       {player.debtAmount > 0 ? (
-                        <span className="font-semibold text-red-600">
+                        <span className="font-semibold text-destructive">
                           {formatMoney(player.debtAmount)}
                         </span>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       {player.status === "inactive" ? (
-                        <Badge variant="outline" className="border-gray-200 text-gray-500">
+                        <Badge variant="outline" className="border-border text-muted-foreground">
                           Inactivo
                         </Badge>
                       ) : player.debtStatus === "overdue" ? (
-                        <Badge variant="outline" className="border-red-200 text-red-700">
+                        <Badge variant="outline" className="border-destructive/30 text-destructive">
                           {player.overdueCount} vencida(s)
                         </Badge>
                       ) : player.debtStatus === "pending" ? (
-                        <Badge variant="outline" className="border-orange-200 text-orange-700">
+                        <Badge variant="outline" className="border-warning/30 text-warning">
                           {player.pendingCount} pendiente(s)
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="border-green-200 text-green-700">
+                        <Badge variant="outline" className="border-success/30 text-success">
                           Al día
                         </Badge>
                       )}
@@ -312,7 +312,7 @@ export default function Socios() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-red-500"
+                            className="text-destructive"
                             onClick={() => deactivate.mutate({ id: player.id })}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -321,7 +321,7 @@ export default function Socios() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-green-600"
+                            className="text-success"
                             onClick={() => reactivate.mutate({ id: player.id })}
                           >
                             <UserCheck className="h-4 w-4" />
@@ -433,7 +433,7 @@ export default function Socios() {
             </Field>
 
             {!editingId && (
-              <label className="flex items-center gap-2 rounded-lg bg-gray-50 p-3 text-sm sm:col-span-2">
+              <label className="flex items-center gap-2 rounded-lg bg-muted/50 p-3 text-sm sm:col-span-2">
                 <Checkbox
                   checked={form.generateCurrentQuota}
                   onCheckedChange={(v) => setForm({ ...form, generateCurrentQuota: Boolean(v) })}
@@ -494,10 +494,10 @@ export default function Socios() {
                 />
               </div>
 
-              <div className="rounded-lg bg-gray-50 p-3">
+              <div className="rounded-lg bg-muted/50 p-3">
                 <div className="flex justify-between text-sm">
                   <span className="font-medium">Deuda actual</span>
-                  <span className="font-mono font-bold text-red-600">
+                  <span className="tabular font-mono font-bold text-destructive">
                     {formatMoney(viewing.debtAmount)}
                   </span>
                 </div>
@@ -505,22 +505,22 @@ export default function Socios() {
 
               <div>
                 <p className="mb-2 text-sm font-medium">Historial de cuotas</p>
-                <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-100">
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-border/60">
                   <table className="w-full text-sm">
                     <tbody>
                       {viewing.quotas.length === 0 && (
                         <EmptyRow colSpan={4} message="Todavía no tiene cuotas generadas." />
                       )}
                       {viewing.quotas.map((quota) => (
-                        <tr key={quota.id} className="border-b border-gray-50 last:border-0">
+                        <tr key={quota.id} className="border-b border-border/60 last:border-0">
                           <td className="px-3 py-2">{formatPeriod(quota.month, quota.year)}</td>
-                          <td className="px-3 py-2 text-right font-mono">
+                          <td className="tabular px-3 py-2 text-right font-mono">
                             {formatMoney(quota.totalAmount)}
                           </td>
                           <td className="px-3 py-2">
                             <QuotaStatusBadge status={quota.status} />
                           </td>
-                          <td className="px-3 py-2 text-xs text-gray-400">
+                          <td className="px-3 py-2 text-xs text-muted-foreground">
                             {quota.receiptNumber ?? ""}
                           </td>
                         </tr>
@@ -557,7 +557,7 @@ function Field({
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs text-gray-400">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       <p className="font-medium">{value}</p>
     </div>
   );

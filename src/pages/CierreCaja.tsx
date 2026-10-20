@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CobrarDialog, type CobrarPayer } from "@/components/CobrarDialog";
-import { EmptyRow, PageHeader } from "@/components/ui-kit";
+import { EmptyRow, MoneyStat, PageHeader } from "@/components/ui-kit";
 import { formatDate, formatMoney, todayInput } from "@/lib/format";
 
 /**
@@ -81,10 +81,10 @@ export default function CierreCaja() {
   const totals = todayData?.totals;
   const expectedCash = todayData?.expectedCash ?? 0;
 
-  if (isLoading) return <p className="p-6 text-sm text-gray-500">Cargando…</p>;
+  if (isLoading) return <p className="p-6 text-sm text-muted-foreground">Cargando…</p>;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in lg:space-y-6">
       <PageHeader
         title="Cierre de caja"
         subtitle={`Movimientos del ${formatDate(today)}`}
@@ -98,7 +98,7 @@ export default function CierreCaja() {
               <Lock className="mr-1 h-4 w-4" /> Cerrar caja
             </Button>
           ) : (
-            <Badge variant="outline" className="border-gray-300 px-3 py-1.5 text-gray-600">
+            <Badge variant="outline" className="border-border px-3 py-1.5 text-muted-foreground">
               Caja cerrada
             </Badge>
           )
@@ -106,7 +106,7 @@ export default function CierreCaja() {
       />
 
       {!closure && (
-        <div className="rounded-lg bg-blue-50 p-4 text-sm text-blue-800">
+        <div className="rounded-lg border border-info/20 bg-info/10 p-4 text-sm text-info">
           Todavía no abriste la caja de hoy. Los cobros igual se registran; abrirla sirve para hacer
           el arqueo del efectivo al final del día.
         </div>
@@ -114,31 +114,33 @@ export default function CierreCaja() {
 
       {/* Movimientos del día */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <SummaryTile
+        <MoneyStat
           label="Efectivo"
           amount={totals?.cashSales ?? 0}
-          icon={<Banknote className="h-5 w-5 text-green-600" />}
+          tone="positive"
+          icon={<Banknote className="h-5 w-5" />}
         />
-        <SummaryTile
+        <MoneyStat
           label="Transferencias"
           amount={totals?.transferSales ?? 0}
-          icon={<CreditCard className="h-5 w-5 text-blue-600" />}
+          icon={<CreditCard className="h-5 w-5" />}
         />
-        <SummaryTile
+        <MoneyStat
           label="MercadoPago"
           amount={totals?.mpSales ?? 0}
-          icon={<CreditCard className="h-5 w-5 text-sky-600" />}
+          icon={<CreditCard className="h-5 w-5" />}
         />
-        <SummaryTile
+        <MoneyStat
           label="Egresos"
           amount={totals?.totalExpenses ?? 0}
-          icon={<TrendingDown className="h-5 w-5 text-red-600" />}
+          tone="danger"
+          icon={<TrendingDown className="h-5 w-5" />}
         />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="border border-gray-200 lg:col-span-1">
-          <CardHeader className="pb-3">
+        <Card className="rounded-xl border-border/70 py-0 shadow-card lg:col-span-1">
+          <CardHeader className="pt-4 pb-3">
             <CardTitle className="text-base">Arqueo de efectivo</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
@@ -150,20 +152,20 @@ export default function CierreCaja() {
               value={`−${formatMoney(totals?.cashExpenses ?? 0)}`}
               tone="danger"
             />
-            <div className="mt-2 flex justify-between border-t border-gray-200 pt-2 font-semibold">
+            <div className="mt-2 flex justify-between border-t border-border/60 pt-2 font-semibold">
               <span>Debería haber</span>
-              <span className="font-mono">{formatMoney(expectedCash)}</span>
+              <span className="tabular">{formatMoney(expectedCash)}</span>
             </div>
             {closure?.status === "closed" && (
               <>
                 <Row label="Contado al cerrar" value={formatMoney(closure.actualCash)} />
                 <div
-                  className={`flex justify-between rounded p-2 font-semibold ${
+                  className={`flex justify-between rounded-lg p-2 font-semibold ${
                     closure.difference === 0
-                      ? "bg-green-50 text-green-700"
+                      ? "bg-success/10 text-success"
                       : closure.difference > 0
-                        ? "bg-blue-50 text-blue-700"
-                        : "bg-red-50 text-red-700"
+                        ? "bg-info/10 text-info"
+                        : "bg-destructive/10 text-destructive"
                   }`}
                 >
                   <span>
@@ -173,10 +175,12 @@ export default function CierreCaja() {
                         ? "Sobrante"
                         : "Faltante"}
                   </span>
-                  <span className="font-mono">{formatMoney(Math.abs(closure.difference))}</span>
+                  <span className="tabular">{formatMoney(Math.abs(closure.difference))}</span>
                 </div>
                 {closure.notes && (
-                  <p className="rounded bg-gray-50 p-2 text-xs text-gray-600">{closure.notes}</p>
+                  <p className="rounded-lg bg-muted p-2 text-xs text-muted-foreground">
+                    {closure.notes}
+                  </p>
                 )}
               </>
             )}
@@ -184,13 +188,13 @@ export default function CierreCaja() {
         </Card>
 
         {/* Cobro rápido en el mostrador */}
-        <Card className="border border-gray-200 lg:col-span-2">
-          <CardHeader className="pb-3">
+        <Card className="rounded-xl border-border/70 py-0 shadow-card lg:col-span-2">
+          <CardHeader className="pt-4 pb-3">
             <CardTitle className="text-base">Cobrar en el mostrador</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-9"
                 inputMode="numeric"
@@ -201,20 +205,20 @@ export default function CierreCaja() {
             </div>
 
             {searchDni.length >= 7 && searching && (
-              <p className="text-sm text-gray-500">Buscando…</p>
+              <p className="text-sm text-muted-foreground">Buscando…</p>
             )}
 
             {searchDni.length >= 7 && !searching && !found && (
-              <p className="rounded bg-gray-50 p-3 text-sm text-gray-500">
+              <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
                 No encontramos a nadie con ese DNI.
               </p>
             )}
 
             {found && (
-              <div className="flex items-center justify-between rounded-lg border border-gray-200 p-3">
+              <div className="flex items-center justify-between rounded-lg border border-border/70 p-3">
                 <div>
                   <p className="font-medium">{found.name}</p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     DNI {found.dni}
                     {found.matchedBy === "player" && found.kind === "guardian" && (
                       <> · se cobra a través del tutor</>
@@ -234,73 +238,71 @@ export default function CierreCaja() {
       </div>
 
       {/* Historial */}
-      <Card className="border border-gray-200">
-        <CardHeader className="pb-3">
+      <Card className="rounded-xl border-border/70 py-0 shadow-card overflow-hidden">
+        <CardHeader className="px-4 pt-4 pb-3">
           <CardTitle className="text-base">Cierres anteriores</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50 text-left text-gray-600">
-                  <th className="px-4 py-3 font-semibold">Fecha</th>
-                  <th className="px-4 py-3 font-semibold">Abrió</th>
-                  <th className="px-4 py-3 text-right font-semibold">Ingresos</th>
-                  <th className="px-4 py-3 text-right font-semibold">Egresos</th>
-                  <th className="px-4 py-3 text-right font-semibold">Diferencia</th>
-                  <th className="px-4 py-3 font-semibold">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(history ?? []).length === 0 && (
-                  <EmptyRow colSpan={6} message="Todavía no hay cierres registrados." />
-                )}
-                {(history ?? []).map((row) => (
-                  <tr key={row.id} className="border-b border-gray-50">
-                    <td className="px-4 py-3">{formatDate(row.date)}</td>
-                    <td className="px-4 py-3 text-gray-500">{row.openedByName ?? "—"}</td>
-                    <td className="px-4 py-3 text-right font-mono text-green-600">
-                      {formatMoney(row.totalIncome)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-red-600">
-                      {formatMoney(row.totalExpenses)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono">
-                      {row.status === "closed" ? (
-                        <span
-                          className={
-                            row.difference === 0
-                              ? "text-gray-500"
-                              : row.difference > 0
-                                ? "text-blue-600"
-                                : "text-red-600"
-                          }
-                        >
-                          {row.difference > 0 ? "+" : ""}
-                          {formatMoney(row.difference)}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        variant="outline"
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/50 text-left text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                <th className="px-4 py-3">Fecha</th>
+                <th className="px-4 py-3">Abrió</th>
+                <th className="px-4 py-3 text-right">Ingresos</th>
+                <th className="px-4 py-3 text-right">Egresos</th>
+                <th className="px-4 py-3 text-right">Diferencia</th>
+                <th className="px-4 py-3">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(history ?? []).length === 0 && (
+                <EmptyRow colSpan={6} message="Todavía no hay cierres registrados." />
+              )}
+              {(history ?? []).map((row) => (
+                <tr key={row.id} className="border-b border-border/60 transition-colors hover:bg-muted/40">
+                  <td className="px-4 py-3">{formatDate(row.date)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{row.openedByName ?? "—"}</td>
+                  <td className="tabular px-4 py-3 text-right font-semibold text-success">
+                    {formatMoney(row.totalIncome)}
+                  </td>
+                  <td className="tabular px-4 py-3 text-right font-semibold text-destructive">
+                    {formatMoney(row.totalExpenses)}
+                  </td>
+                  <td className="tabular px-4 py-3 text-right">
+                    {row.status === "closed" ? (
+                      <span
                         className={
-                          row.status === "open"
-                            ? "border-green-200 text-green-700"
-                            : "border-gray-200 text-gray-500"
+                          row.difference === 0
+                            ? "text-muted-foreground"
+                            : row.difference > 0
+                              ? "text-info"
+                              : "text-destructive"
                         }
                       >
-                        {row.status === "open" ? "Abierta" : "Cerrada"}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
+                        {row.difference > 0 ? "+" : ""}
+                        {formatMoney(row.difference)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge
+                      variant="outline"
+                      className={
+                        row.status === "open"
+                          ? "border-success/25 bg-success/10 text-success"
+                          : "border-border text-muted-foreground"
+                      }
+                    >
+                      {row.status === "open" ? "Abierta" : "Cerrada"}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
 
       {/* Abrir caja */}
@@ -344,10 +346,10 @@ export default function CierreCaja() {
             <DialogTitle>Cerrar caja — {formatDate(today)}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <div className="rounded-lg bg-gray-50 p-3 text-sm">
+            <div className="rounded-lg bg-muted p-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-600">Debería haber en efectivo</span>
-                <span className="font-mono font-semibold">{formatMoney(expectedCash)}</span>
+                <span className="text-muted-foreground">Debería haber en efectivo</span>
+                <span className="tabular font-semibold">{formatMoney(expectedCash)}</span>
               </div>
             </div>
             <div className="space-y-1.5">
@@ -361,7 +363,7 @@ export default function CierreCaja() {
                 autoFocus
               />
               {actualCash !== "" && (
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Diferencia: {formatMoney(Number(actualCash) - expectedCash)}
                 </p>
               )}
@@ -407,30 +409,6 @@ export default function CierreCaja() {
   );
 }
 
-function SummaryTile({
-  label,
-  amount,
-  icon,
-}: {
-  label: string;
-  amount: number;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Card className="border border-gray-200">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-sm text-gray-500">{label}</p>
-            <p className="truncate font-mono text-lg font-bold">{formatMoney(amount)}</p>
-          </div>
-          {icon}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function Row({
   label,
   value,
@@ -442,8 +420,8 @@ function Row({
 }) {
   return (
     <div className="flex justify-between">
-      <span className="text-gray-600">{label}</span>
-      <span className={`font-mono ${tone === "danger" ? "text-red-600" : ""}`}>{value}</span>
+      <span className="text-muted-foreground">{label}</span>
+      <span className={`tabular ${tone === "danger" ? "text-destructive" : ""}`}>{value}</span>
     </div>
   );
 }
