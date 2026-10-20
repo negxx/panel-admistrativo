@@ -6,6 +6,13 @@ import { appRouter } from "../router";
 import type { TrpcContext } from "../context";
 
 /**
+ * Los avisos de deuda usan IA cuando hay `GROQ_API_KEY`, y la redacción que
+ * vuelve no es determinista. Los tests verifican contra la plantilla fija, así
+ * que en este archivo la IA tiene que estar apagada sí o sí.
+ */
+delete process.env.GROQ_API_KEY;
+
+/**
  * Recorre **todas** las consultas de lectura del panel contra un PostgreSQL real.
  *
  * Existe por un fallo concreto: `dashboard.getCollectionTrend` agrupaba por
