@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router";
-import { Toaster } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
 import AdminLayout from "./components/AdminLayout";
 import PortalLayout from "./components/PortalLayout";
 
@@ -27,8 +27,8 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 
 function PageLoader() {
   return (
-    <div className="flex h-screen items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-[#ffc107]" />
+    <div className="flex h-screen items-center justify-center bg-background">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
     </div>
   );
 }
