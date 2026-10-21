@@ -10,6 +10,8 @@
  * - WHATSAPP_VERIFY_TOKEN: Token secreto que elegimos para validar el webhook con Meta.
  */
 
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 const GRAPH_API_VERSION = "v21.0";
 
 export function getVerifyToken(): string {
@@ -108,6 +110,46 @@ export async function sendCloudText(rawPhone: string, text: string): Promise<boo
     console.error("[whatsapp-cloud] Error de red enviando a Meta:", err);
     return false;
   }
+}
+
+/**
+ * Verifica la firma que Meta agrega a cada webhook (`X-Hub-Signature-256`:
+ * HMAC-SHA256 del body crudo con el App Secret de la app). Sin esta
+ * verificación, cualquiera que conozca la URL puede hacerse pasar por un
+ * socio: el bot le contestaría con la deuda de ese teléfono y dejaría
+ * registros falsos en el CRM. Se exige sólo si hay `WHATSAPP_APP_SECRET`
+ * configurado, para que la demo local siga andando sin ese dato.
+ */
+export function verifyWebhookSignature(
+  rawBody: string,
+  signatureHeader: string | undefined,
+): boolean {
+  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  if (!appSecret) return true;
+  if (!signatureHeader?.startsWith("sha256=")) return false;
+  const expected = createHmac("sha256", appSecret).update(rawBody, "utf8").digest("hex");
+  const provided = signatureHeader.slice("sha256=".length);
+  const a = Buffer.from(expected, "hex");
+  const b = Buffer.from(provided, "hex");
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Meta reintenta el webhook si no le contestamos rápido, y así un mismo
+ * mensaje puede procesarse dos veces: respuesta duplicada al socio y registro
+ * doble en el CRM. Dedupe en memoria por id de mensaje, ventana de 10 minutos.
+ */
+const seenMessages = new Map<string, number>();
+const DEDUPE_WINDOW_MS = 10 * 60 * 1000;
+
+export function isDuplicateMessage(messageId: string): boolean {
+  const now = Date.now();
+  for (const [id, ts] of seenMessages) {
+    if (now - ts > DEDUPE_WINDOW_MS) seenMessages.delete(id);
+  }
+  if (seenMessages.has(messageId)) return true;
+  seenMessages.set(messageId, now);
+  return false;
 }
 
 /**

@@ -6,7 +6,7 @@ import { createContext } from "./context";
 import { createOAuthCallbackHandler } from "./kimi/auth";
 import { Paths } from "../contracts/constants";
 import { runMaintenance } from "./domain/maintenance";
-import { verifyWebhook, extractIncomingMessages, sendCloudText } from "./services/whatsapp-cloud";
+import { verifyWebhook, extractIncomingMessages, sendCloudText, verifyWebhookSignature, isDuplicateMessage } from "./services/whatsapp-cloud";
 import { handleMessageFromPhone } from "./services/wa-assistant";
 
 /**
@@ -47,12 +47,27 @@ app.get("/api/webhook/whatsapp", (c) => {
 
 app.post("/api/webhook/whatsapp", async (c) => {
   try {
-    const body = await c.req.json();
+    // La firma de Meta se calcula sobre el body crudo: hay que leerlo como
+    // texto y recién después parsearlo.
+    const rawBody = await c.req.text();
+    if (!verifyWebhookSignature(rawBody, c.req.header("x-hub-signature-256"))) {
+      console.error("[webhook-whatsapp] Firma inválida: pedido rechazado");
+      return c.text("Forbidden", 403);
+    }
+
+    const body = JSON.parse(rawBody);
     const messages = extractIncomingMessages(body);
 
     console.log(`[webhook] Recibido POST con ${messages.length} mensaje(s)`);
 
     for (const msg of messages) {
+      // Meta reintenta el envío si tardamos en responder; sin este filtro el
+      // mismo mensaje se contestaría (y se registraría) dos veces.
+      if (isDuplicateMessage(msg.messageId)) {
+        console.log(`[webhook] Mensaje duplicado (${msg.messageId}): ignorado`);
+        continue;
+      }
+
       console.log(`[webhook] Mensaje de ${msg.phone}: "${msg.text}"`);
       const reply = await handleMessageFromPhone(msg.phone, msg.text);
       if (reply) {
